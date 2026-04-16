@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="js node test page." />
+    <meta name="author" content="This page authored by timokent" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Abel&family=Tapestry&display=swap"
+    />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="icon" href="images/okdok.png" />
+    <title>Copy Input Record (CI QMS)</title>
+  </head>
+  <body>
+    <header id="header"></header>
+    <div class="recordsaddrecordheading">
+      <h1>Copy Input Record</h1>
+      <button
+        class="addrecordheadingbutton"
+        id="copyInputBtn"
+        title="Copy Input Record"
+      >
+        📋
+      </button>
+    </div>
+
+    <main id="main">
+      <!-- Copy Input Dialog -->
+      <dialog id="copyInputDialog" class="dialog">
+        <form id="copyInputForm" class="form">
+          <div class="form-header">
+            <h2>Copy Input Record</h2>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="copyid"
+                >Source Input ID <span class="required">*</span></label
+              >
+              <input
+                type="text"
+                id="copyid"
+                name="copyid"
+                placeholder="Enter ID to copy"
+                required
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="copydate"
+                >New Input Date <span class="required">*</span></label
+              >
+              <input type="date" id="copydate" name="copydate" required />
+            </div>
+
+            <div class="form-group">
+              <label for="duedays"
+                >Due Days <span class="required">*</span></label
+              >
+              <input
+                type="number"
+                id="duedays"
+                name="duedays"
+                value="7"
+                min="1"
+                max="365"
+                required
+              />
+              <small class="field-help"
+                >Number of days from input date to due date</small
+              >
+            </div>
+          </div>
+
+          <div class="dialog-actions">
+            <button type="submit" id="executeCopyBtn" class="btn btn-primary">
+              <span class="btn-icon">📋</span>
+              Copy Input Record
+            </button>
+            <button type="button" id="closeCopyBtn" class="btn btn-cancel">
+              <span class="btn-icon">✕</span>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </dialog>
+
+      <!-- Results container -->
+      <div id="copyResultsContainer" class="results-container">
+        <div class="info-message">
+          <h3>Copy Input Record</h3>
+          <p>
+            This tool allows you to copy an existing input record with a new
+            date and due date.
+          </p>
+          <ul>
+            <li>Enter the ID of the input record you want to copy</li>
+            <li>Set the new input date</li>
+            <li>Specify how many days until the new record is due</li>
+            <li>The new record will be assigned a new ID automatically</li>
+          </ul>
+        </div>
+      </div>
+    </main>
+    <footer id="footer"></footer>
+  </body>
+  <script type="module" src="/js/inputcopy.mjs"></script>
+</html>

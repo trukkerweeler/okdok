@@ -1,0 +1,225 @@
+/* Dashboard specific styles for index.html */
+
+.dashboard-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  min-height: 100vh;
+}
+
+.dashboard-header {
+  text-align: center;
+  margin-bottom: 3rem;
+  padding: 2rem;
+  background: white;
+  border-radius: 15px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-title {
+  font-size: 3rem;
+  font-weight: 700;
+  color: #2c3e50;
+  margin: 0 0 0.5rem 0;
+  background: linear-gradient(135deg, #2c3e50 0%, #f0f8ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.dashboard-subtitle {
+  font-size: 1.2rem;
+  color: #7f8c8d;
+  font-weight: 300;
+  margin: 0;
+}
+
+.modules-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.module-card {
+  background: white;
+  border-radius: 15px;
+  padding: 2rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+  position: relative;
+  overflow: hidden;
+}
+
+.module-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(135deg, #2c3e50 0%, #f0f8ff 100%);
+}
+
+.module-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.15);
+  border-color: #2c3e50;
+}
+
+.module-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.module-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: white;
+  flex-shrink: 0;
+}
+
+.module-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0;
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+
+.module-card:hover .module-title {
+  color: #2c3e50;
+}
+
+.module-description {
+  font-size: 0.95rem;
+  color: #7f8c8d;
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.module-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.action-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #f8f9fa;
+  color: #495057;
+  text-decoration: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  border: 1px solid #e9ecef;
+}
+
+.action-link:hover {
+  background: #2c3e50;
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(44, 62, 80, 0.3);
+}
+
+.action-link.primary {
+  background: #2c3e50;
+  color: white;
+  border-color: #2c3e50;
+}
+
+.action-link.primary:hover {
+  background: #34495e;
+  border-color: #34495e;
+}
+
+/* Module specific colors */
+.module-card.actions::before {
+  background: linear-gradient(135deg, #2c3e50 0%, #f0f8ff 100%);
+}
+.module-card.actions .module-icon {
+  background: linear-gradient(135deg, #2c3e50 0%, #f0f8ff 100%);
+}
+
+.module-card.ncm::before {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+.module-card.ncm .module-icon {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.module-card.corrective::before {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+.module-card.corrective .module-icon {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.module-card.sysdoc::before {
+  background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+}
+.module-card.sysdoc .module-icon {
+  background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+}
+
+.module-card.supplier::before {
+  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+.module-card.supplier .module-icon {
+  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+
+.module-card.competency::before {
+  background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+}
+.module-card.competency .module-icon {
+  background: linear-gradient(135deg, #2c3e50 0%, #f0f8ff 100%);
+}
+
+.module-card.cert::before {
+  background: linear-gradient(135deg, #34495e 0%, #ecf0f1 100%);
+}
+.module-card.cert .module-icon {
+  background: linear-gradient(135deg, #34495e 0%, #ecf0f1 100%);
+}
+
+.module-card.maintenance::before {
+  background: linear-gradient(135deg, #2c3e50 0%, #f0f8ff 100%);
+}
+.module-card.maintenance .module-icon {
+  background: linear-gradient(135deg, #2c3e50 0%, #f0f8ff 100%);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .dashboard-container {
+    padding: 1rem;
+  }
+
+  .dashboard-title {
+    font-size: 2rem;
+  }
+
+  .modules-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .module-card {
+    padding: 1.5rem;
+  }
+}

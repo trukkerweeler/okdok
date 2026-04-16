@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Input Help - CIQMS" />
+    <meta name="author" content="This page authored by timokent" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Abel&family=Tapestry&display=swap"
+    />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="icon" href="images/okdok.png" />
+    <title>Input Help (CIQMS)</title>
+  </head>
+  <body>
+    <header id="header"></header>
+    <div class="recordsaddrecordheading">
+      <h1>Input Help</h1>
+      <button
+        class="addrecordheadingbutton button"
+        id="addHelpBtn"
+        title="Add new help record"
+      >
+        +
+      </button>
+    </div>
+
+    <main id="main">
+      <!-- Add Help Dialog -->
+      <dialog id="addHelpDialog" class="dialog">
+        <form id="addHelpForm" class="form">
+          <div class="form-header">
+            <h2>Add Help Record</h2>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="SUBJECT"
+                >Subject <span class="required">*</span></label
+              >
+              <input
+                type="text"
+                id="subject"
+                name="SUBJECT"
+                placeholder="Enter help subject"
+                required
+              />
+            </div>
+
+            <div class="form-group full-width">
+              <label for="DESCRIPTION"
+                >Description <span class="required">*</span></label
+              >
+              <textarea
+                id="description"
+                name="DESCRIPTION"
+                placeholder="Enter help description"
+                rows="3"
+                required
+              ></textarea>
+            </div>
+
+            <div class="form-group full-width">
+              <label for="LINK">Link/Document</label>
+              <input
+                type="file"
+                id="linkFile"
+                accept=".pdf,.doc,.docx,.txt,.mp4,.avi,.mov,.wmv,.jpg,.jpeg,.png,.gif"
+                style="margin-bottom: 0.5rem"
+              />
+              <input
+                type="text"
+                id="link"
+                name="LINK"
+                placeholder="Or enter URL/path manually, or file will be uploaded automatically"
+              />
+            </div>
+          </div>
+
+          <div class="dialog-actions">
+            <button id="saveHelpBtn" type="submit" class="btn btn-primary">
+              <span class="btn-icon">✓</span>
+              Save Help Record
+            </button>
+            <button type="button" id="closeAddBtn" class="btn btn-cancel">
+              <span class="btn-icon">✕</span>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </dialog>
+
+      <!-- Table container for help data -->
+      <div id="inputHelpTableContainer" class="table-container">
+        <!-- Table will be dynamically generated here -->
+      </div>
+    </main>
+    <footer id="footer"></footer>
+  </body>
+  <script type="module" src="/js/inputhelp.mjs"></script>
+</html>

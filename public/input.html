@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="js node test page." />
+    <meta name="author" content="This page authored by timokent" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Abel&family=Tapestry&display=swap"
+    />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="icon" href="images/okdok.png" />
+    <title>Input - Detail</title>
+  </head>
+  <body>
+    <header id="header"></header>
+
+    <!-- Modal Dialogs for editing -->
+    <dialog id="actionDialog">
+      <div class="dialog-header">
+        <h5>Edit Action</h5>
+        <button
+          type="button"
+          class="btn-close"
+          onclick="document.getElementById('actionDialog').close()"
+        >
+          &times;
+        </button>
+      </div>
+      <form id="actionForm" method="dialog">
+        <div class="dialog-content">
+          <textarea
+            id="newTextAction"
+            class="form-control"
+            rows="4"
+            placeholder="Enter action..."
+          ></textarea>
+        </div>
+        <div class="dialog-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick="document.getElementById('actionDialog').close()"
+          >
+            Cancel
+          </button>
+          <button type="button" class="btn btn-primary" id="saveAction">
+            Save
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="followupDialog">
+      <div class="dialog-header">
+        <h5>Edit Followup</h5>
+        <button
+          type="button"
+          class="btn-close"
+          onclick="document.getElementById('followupDialog').close()"
+        >
+          &times;
+        </button>
+      </div>
+      <form id="followupForm" method="dialog">
+        <div class="dialog-content">
+          <div class="mb-2">
+            <label for="newFollowUpDate" class="form-label"
+              >Followup Date</label
+            >
+            <input type="date" id="newFollowUpDate" class="form-control" />
+          </div>
+          <textarea
+            id="newTextFollowup"
+            class="form-control"
+            rows="4"
+            placeholder="Enter followup..."
+          ></textarea>
+        </div>
+        <div class="dialog-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick="document.getElementById('followupDialog').close()"
+          >
+            Cancel
+          </button>
+          <button type="button" class="btn btn-primary" id="saveFlup">
+            Save
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="responseDialog">
+      <div class="dialog-header">
+        <h5>Edit Response</h5>
+        <button
+          type="button"
+          class="btn-close"
+          onclick="document.getElementById('responseDialog').close()"
+        >
+          &times;
+        </button>
+      </div>
+      <form id="responseForm" method="dialog">
+        <div class="dialog-content">
+          <div class="mb-2">
+            <label for="newResponseDate" class="form-label"
+              >Response Date</label
+            >
+            <input type="date" id="newResponseDate" class="form-control" />
+          </div>
+          <textarea
+            id="newTextResp"
+            class="form-control"
+            rows="6"
+            placeholder="Enter response..."
+          ></textarea>
+        </div>
+        <div class="dialog-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick="document.getElementById('responseDialog').close()"
+          >
+            Cancel
+          </button>
+          <button type="button" class="btn btn-primary" id="saveResp">
+            Save
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="editInputForm" class="card p-3 mb-3" style="display: none">
+      <h5>Edit Input Details</h5>
+      <div class="mb-2">
+        <label for="ASSIGNED_TO" class="form-label">Assigned To</label>
+        <input
+          type="text"
+          id="ASSIGNED_TO"
+          class="form-control"
+          style="text-transform: uppercase"
+        />
+      </div>
+      <div class="mb-2">
+        <label for="REQUESTED_BY" class="form-label">Requested By</label>
+        <input
+          type="text"
+          id="REQUESTED_BY"
+          class="form-control"
+          style="text-transform: uppercase"
+        />
+      </div>
+      <div class="mb-2">
+        <label for="SUBJECT" class="form-label">Subject</label>
+        <input
+          type="text"
+          id="SUBJECT"
+          class="form-control"
+          style="text-transform: uppercase"
+        />
+      </div>
+      <div class="mb-2">
+        <label for="DUE_DATE" class="form-label">Due Date</label>
+        <input type="date" id="DUE_DATE" class="form-control" />
+      </div>
+      <div class="mb-2">
+        <label for="PROJECT_ID" class="form-label">Project</label>
+        <input type="text" id="PROJECT_ID" class="form-control" />
+      </div>
+      <button id="saveDetail" class="btn btn-primary btn-sm">Save</button>
+      <button id="cancelDetail" class="btn btn-secondary btn-sm">Cancel</button>
+    </div>
+
+    <div id="editEmailForm" class="card p-3 mb-3" style="display: none">
+      <h5>Add Email Comment</h5>
+      <textarea
+        id="emailCommentText"
+        class="form-control mb-2"
+        rows="4"
+        placeholder="Enter email comment..."
+      ></textarea>
+      <button id="saveEmailComment" class="btn btn-primary btn-sm">Send</button>
+      <button id="cancelEmail" class="btn btn-secondary btn-sm">Cancel</button>
+    </div>
+
+    <dialog id="resourceDialog">
+      <div class="dialog-header">
+        <h5 id="dialogTitle">Add Resource</h5>
+        <button
+          type="button"
+          class="btn-close"
+          onclick="document.getElementById('resourceDialog').close()"
+        >
+          &times;
+        </button>
+      </div>
+      <form id="resourceForm" method="dialog">
+        <div class="dialog-content">
+          <input type="hidden" id="resourceId" />
+          <div class="mb-2">
+            <label for="resourceType" class="form-label">Resource Type</label>
+            <select id="resourceType" class="form-control">
+              <option value="">-- Select --</option>
+              <option value="M">Material (M)</option>
+              <option value="L">Labor (L)</option>
+              <option value="O">Outside (O)</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label for="resourceDescription" class="form-label"
+              >Description</label
+            >
+            <input
+              type="text"
+              id="resourceDescription"
+              class="form-control"
+              placeholder="e.g., 2x4 lumber, Faucet model XYZ"
+            />
+          </div>
+          <div class="mb-2">
+            <label for="resourceQuantity" class="form-label">Quantity</label>
+            <input
+              type="number"
+              id="resourceQuantity"
+              class="form-control"
+              placeholder="1"
+              step="0.01"
+              min="0"
+            />
+          </div>
+          <div class="mb-2">
+            <label for="resourceQuantityUnit" class="form-label">Unit</label>
+            <input
+              type="text"
+              id="resourceQuantityUnit"
+              class="form-control"
+              placeholder="e.g., sheets, gallons, units"
+            />
+          </div>
+          <div class="mb-2">
+            <label for="resourceHours" class="form-label">Hours</label>
+            <input
+              type="number"
+              id="resourceHours"
+              class="form-control"
+              placeholder="0"
+              step="0.25"
+              min="0"
+            />
+          </div>
+          <div class="mb-2">
+            <label for="resourceRate" class="form-label">Rate/Price</label>
+            <input
+              type="number"
+              id="resourceRate"
+              class="form-control"
+              placeholder="0.00"
+              step="0.01"
+              min="0"
+            />
+          </div>
+        </div>
+        <div class="dialog-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick="document.getElementById('resourceDialog').close()"
+          >
+            Cancel
+          </button>
+          <button type="button" class="btn btn-primary" id="saveResourceBtn">
+            Save
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <main id="main"></main>
+    <footer id="footer"></footer>
+  </body>
+  <script type="module" src="/js/input.mjs"></script>
+</html>

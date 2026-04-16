@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="PM company operating expenses tracking."
+    />
+    <meta name="author" content="OKDOK Accounting" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Abel&family=Tapestry&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+    />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="icon" href="images/okdok.png" />
+    <title>PM Expenses - Accounting</title>
+    <style>
+      .pm-expenses-page {
+        background-color: #f8f9fa;
+      }
+
+      .expenses-container {
+        display: grid;
+        grid-template-columns: 350px 1fr;
+        gap: 20px;
+        padding: 20px;
+        max-width: 1600px;
+        margin: 0 auto;
+      }
+
+      .entry-panel {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        height: fit-content;
+        position: sticky;
+        top: 20px;
+      }
+
+      .log-panel {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+
+      .form-group-compact {
+        margin-bottom: 12px;
+      }
+
+      .form-group-compact label {
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 4px;
+        display: block;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .form-group-compact input,
+      .form-group-compact select,
+      .form-group-compact textarea {
+        font-size: 13px;
+        padding: 8px 10px;
+      }
+
+      .expense-log {
+        max-height: 600px;
+        overflow-y: auto;
+      }
+
+      .log-entry {
+        display: grid;
+        grid-template-columns: 80px 80px 90px 1fr 50px;
+        gap: 12px;
+        padding: 10px;
+        border-bottom: 1px solid #f0f0f0;
+        align-items: center;
+        font-size: 13px;
+      }
+
+      .log-entry:hover {
+        background: #f9f9f9;
+      }
+
+      .log-date {
+        font-weight: 600;
+        color: #666;
+        font-family: "Courier New", monospace;
+      }
+
+      .log-amount {
+        font-family: "Courier New", monospace;
+        font-weight: 700;
+        text-align: right;
+        color: #dc3545;
+      }
+
+      .log-category {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        background: #eef;
+        color: #33c;
+      }
+
+      .log-description {
+        color: #555;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .log-delete {
+        text-align: center;
+        cursor: pointer;
+        color: #999;
+        font-size: 18px;
+      }
+
+      .log-delete:hover {
+        color: #dc3545;
+      }
+
+      .action-buttons {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+        margin-top: 15px;
+      }
+
+      .btn-compact {
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .btn-submit {
+        background: #dc3545;
+        color: white;
+      }
+
+      .btn-submit:hover {
+        background: #bd2130;
+      }
+
+      .btn-secondary {
+        background: #6c757d;
+        color: white;
+      }
+
+      .btn-secondary:hover {
+        background: #545b62;
+      }
+
+      .log-summary {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px;
+        background: #f8f9fa;
+        border-radius: 4px;
+        font-size: 12px;
+        margin-bottom: 15px;
+      }
+
+      .summary-stat {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .summary-label {
+        color: #666;
+        font-size: 11px;
+        text-transform: uppercase;
+        margin-bottom: 2px;
+      }
+
+      .summary-value {
+        font-weight: 700;
+        font-family: "Courier New", monospace;
+        font-size: 14px;
+        color: #dc3545;
+      }
+
+      .category-filter {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+
+      .category-btn {
+        padding: 4px 8px;
+        border: 1px solid #ddd;
+        background: white;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .category-btn:hover {
+        background: #f0f0f0;
+      }
+
+      .category-btn.active {
+        background: #dc3545;
+        color: white;
+        border-color: #dc3545;
+      }
+
+      .empty-log {
+        text-align: center;
+        padding: 40px 20px;
+        color: #999;
+      }
+
+      .empty-log-icon {
+        font-size: 48px;
+        margin-bottom: 10px;
+      }
+
+      .error-message {
+        background: #fee;
+        color: #c33;
+        padding: 10px;
+        border-radius: 4px;
+        margin-bottom: 10px;
+        font-size: 12px;
+      }
+
+      .success-message {
+        background: #efe;
+        color: #3c3;
+        padding: 10px;
+        border-radius: 4px;
+        margin-bottom: 10px;
+        font-size: 12px;
+      }
+
+      @media (max-width: 1024px) {
+        .expenses-container {
+          grid-template-columns: 1fr;
+        }
+
+        .entry-panel {
+          position: static;
+        }
+      }
+    </style>
+  </head>
+  <body class="pm-expenses-page">
+    <header id="header"></header>
+
+    <div class="container-fluid" style="padding: 15px">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h3 mb-0">PM Operating Expenses</h1>
+        <div>
+          <button
+            class="btn btn-sm btn-outline-secondary"
+            id="exportBtn"
+            title="Export to CSV"
+          >
+            📥 Export
+          </button>
+          <button
+            class="btn btn-sm btn-outline-secondary ms-2"
+            id="refreshBtn"
+            title="Refresh"
+          >
+            🔄 Refresh
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="expenses-container">
+      <!-- ENTRY PANEL (LEFT) -->
+      <div class="entry-panel">
+        <h5 style="margin-bottom: 15px; font-size: 14px; font-weight: 700">
+          ADD EXPENSE
+        </h5>
+
+        <!-- Error/Success Messages -->
+        <div id="messageContainer"></div>
+
+        <!-- Entry Form -->
+        <form id="entryForm">
+          <div class="form-group-compact">
+            <label>Category *</label>
+            <select id="entryCategory" required class="form-select">
+              <option value="office">Office Supplies</option>
+              <option value="technology">Technology & Software</option>
+              <option value="staff">Staff & Training</option>
+              <option value="utilities">Utilities & Rent</option>
+              <option value="marketing">Marketing & Advertising</option>
+              <option value="professional">Professional Services</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div class="form-group-compact">
+            <label>Amount *</label>
+            <input
+              type="number"
+              id="entryAmount"
+              step="0.01"
+              placeholder="0.00"
+              required
+              class="form-control"
+            />
+          </div>
+
+          <div class="form-group-compact">
+            <label>Description *</label>
+            <input
+              type="text"
+              id="entryDescription"
+              placeholder="What was purchased?"
+              required
+              class="form-control"
+            />
+          </div>
+
+          <div class="form-group-compact">
+            <label>Vendor</label>
+            <select id="entryVendor" class="form-control">
+              <option value="">-- Select Vendor --</option>
+            </select>
+          </div>
+
+          <div class="form-group-compact">
+            <label>Date</label>
+            <input type="date" id="entryDate" class="form-control" />
+          </div>
+
+          <div class="action-buttons">
+            <button type="submit" class="btn-compact btn-submit">
+              Add Expense (Enter)
+            </button>
+          </div>
+        </form>
+
+        <!-- Summary Stats -->
+        <div class="log-summary" style="margin-top: 20px">
+          <div class="summary-stat">
+            <div class="summary-label">This Month</div>
+            <div class="summary-value" id="statsMonth">$0</div>
+          </div>
+          <div class="summary-stat">
+            <div class="summary-label">This Year</div>
+            <div class="summary-value" id="statsYear">$0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LOG PANEL (RIGHT) -->
+      <div class="log-panel">
+        <h5 style="margin-bottom: 15px; font-size: 14px; font-weight: 700">
+          EXPENSE LOG
+        </h5>
+
+        <!-- Category Filter -->
+        <div class="category-filter">
+          <button class="category-btn active" data-filter="">All</button>
+          <button class="category-btn" data-filter="office">Office</button>
+          <button class="category-btn" data-filter="technology">Tech</button>
+          <button class="category-btn" data-filter="staff">Staff</button>
+          <button class="category-btn" data-filter="utilities">
+            Utilities
+          </button>
+          <button class="category-btn" data-filter="marketing">
+            Marketing
+          </button>
+          <button class="category-btn" data-filter="professional">
+            Professional
+          </button>
+          <button class="category-btn" data-filter="other">Other</button>
+        </div>
+
+        <!-- Expense Log -->
+        <div class="expense-log" id="expenseLog">
+          <div class="empty-log">
+            <div class="empty-log-icon">💼</div>
+            <div>No expenses yet. Add one to get started.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer id="footer"></footer>
+
+    <script type="module" src="/js/pm-expenses.mjs"></script>
+  </body>
+</html>

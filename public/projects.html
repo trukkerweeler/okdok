@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="js node test page." />
+    <meta name="author" content="This page authored by timokent" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Abel&family=Tapestry&display=swap"
+    />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="icon" href="images/okdok.png" />
+    <title>Projects</title>
+  </head>
+  <body class="projects-page">
+    <header id="header"></header>
+    <div
+      class="recordsaddrecordheading d-flex align-items-center justify-content-between my-3"
+    >
+      <h1 class="h3 mb-0">Project Records</h1>
+      <button
+        class="addrecordheadingbutton btn btn-primary btn-lg"
+        id="addProjectBtn"
+        title="Add Project"
+      >
+        +
+      </button>
+    </div>
+    <main class="container my-4">
+      <!-- Add Project Dialog -->
+      <dialog id="addProjectDialog" class="dialog p-0">
+        <div class="dialog-header p-3 border-bottom">
+          <h2 class="h5 mb-0">Add New Project</h2>
+        </div>
+        <form id="addProjectForm" class="form p-3">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label for="LEADER" class="form-label required">Assignee</label>
+              <input
+                type="text"
+                id="LEADER"
+                name="LEADER"
+                required
+                placeholder="Enter Leader ID"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-6">
+              <label for="PROJECT_TYPE" class="form-label">Project Type</label>
+              <select name="PROJECT_TYPE" id="PROJECT_TYPE" class="form-select">
+                <option value="RE">Real Estate</option>
+                <option value="GE">General</option>
+                <option value="ME" selected>Mechanic</option>
+              </select>
+            </div>
+
+            <div class="col-md-8">
+              <label for="NAME" class="form-label required">Project Name</label>
+              <input
+                type="text"
+                id="NAME"
+                name="NAME"
+                required
+                placeholder="Enter project name"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-4">
+              <label for="PROJECT_ID" class="form-label required"
+                >Project ID</label
+              >
+              <input
+                type="text"
+                id="PROJECT_ID"
+                name="PROJECT_ID"
+                required
+                placeholder="Project ID"
+                class="form-control"
+              />
+            </div>
+          </div>
+
+          <div class="dialog-actions d-flex gap-2 justify-content-end mt-3">
+            <button id="saveProjectBtn" type="submit" class="btn btn-primary">
+              <span class="btn-icon">✓</span>
+              Save Project
+            </button>
+            <button
+              type="button"
+              id="closeAddProjectBtn"
+              class="btn btn-secondary"
+            >
+              <span class="btn-icon">✕</span>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </dialog>
+
+      <!-- Table container for project data -->
+      <div id="projectTableContainer" class="table-container">
+        <!-- Table will be dynamically generated here -->
+      </div>
+    </main>
+    <footer id="footer"></footer>
+  </body>
+  <script type="module" src="/js/projects.mjs"></script>
+</html>

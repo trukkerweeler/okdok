@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inputs</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header id="header"></header>
+    <main class="container py-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h4 mb-0">Inputs</h1>
+        <div>
+          <button id="addInputBtn" class="btn btn-primary">Add Input</button>
+        </div>
+      </div>
+
+      <!-- Hidden dialog: shared add input dialog will render here when opened -->
+      <div id="dialogRoot"></div>
+
+      <!-- Table container for input data -->
+      <div id="inputTableContainer" class="table-container"></div>
+    </main>
+    <footer id="footer"></footer>
+
+    <script type="module">
+      import { getSessionUser } from "/js/utils.mjs";
+      import { openAddInputDialog } from "/js/addInputDialog.mjs";
+
+      // Wire Add button
+      document.addEventListener("DOMContentLoaded", () => {
+        const addBtn = document.getElementById("addInputBtn");
+        if (addBtn)
+          addBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            openAddInputDialog({});
+          });
+
+        // Auto-open if ?project=ID present
+        (async () => {
+          try {
+            const params = new URLSearchParams(window.location.search);
+            const project = params.get("project");
+            if (!project) return;
+            const sessionUser = await getSessionUser().catch(() => null);
+            openAddInputDialog({ projectId: project, sessionUser });
+          } catch (e) {
+            console.error("Auto-open add dialog failed:", e);
+          }
+        })();
+      });
+    </script>
+
+    <script type="module" src="/js/inputs.mjs"></script>
+  </body>
+</html>
