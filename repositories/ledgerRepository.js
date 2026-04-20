@@ -114,6 +114,15 @@ const ledgerRepository = {
                  ORDER BY date ASC`;
     return db.query(sql, [owner_id, startDate, endDate]);
   },
+
+  /**
+   * Delete a ledger entry by ID
+   */
+  delete: async (id) => {
+    const sql = "DELETE FROM ledger_entries WHERE id = ?";
+    const results = await db.query(sql, [id]);
+    return results.affectedRows > 0;
+  },
 };
 
 module.exports = ledgerRepository;

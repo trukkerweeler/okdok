@@ -848,4 +848,28 @@ router.post("/vendors", async (req, res) => {
   }
 });
 
+/**
+ * DELETE /ledger/:id - Delete a ledger entry (undo transaction)
+ */
+router.delete("/ledger/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const entry = await ledgerRepository.getById(id);
+    if (!entry) {
+      return res.status(404).json({ error: "Ledger entry not found" });
+    }
+
+    const deleted = await ledgerRepository.delete(id);
+    if (deleted) {
+      res.json({ message: "Transaction deleted", id });
+    } else {
+      res.status(400).json({ error: "Failed to delete transaction" });
+    }
+  } catch (error) {
+    console.error("Error deleting ledger entry:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

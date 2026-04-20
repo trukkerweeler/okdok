@@ -20,6 +20,8 @@ let currentType = "expense";
 let lastTransaction = null;
 let isBatchMode = false;
 let filterProperty = null;
+let isSubmitting = false;
+let isBatchSubmitting = false;
 
 // Initialize
 async function initializeTransactions() {
@@ -232,6 +234,11 @@ function populateVendorDropdown() {
 async function submitTransaction(e) {
   e.preventDefault();
 
+  // Prevent double submission
+  if (isSubmitting) {
+    return;
+  }
+
   const owner_id = parseInt(document.getElementById("entryOwner").value);
   const property_id = document.getElementById("entryProperty").value
     ? parseInt(document.getElementById("entryProperty").value)
@@ -254,6 +261,8 @@ async function submitTransaction(e) {
     showMessage("Vendor is required for expenses", "error");
     return;
   }
+
+  isSubmitting = true;
 
   try {
     const payload = { amount, owner_id, property_id, memo, date };
@@ -302,20 +311,29 @@ async function submitTransaction(e) {
 
     // Focus back to owner for next entry
     document.getElementById("entryOwner").focus();
+    isSubmitting = false;
   } catch (error) {
     console.error("Error:", error);
     showMessage(error.message, "error");
+    isSubmitting = false;
   }
 }
 
 async function submitBatch(e) {
   e.preventDefault();
 
+  // Prevent double submission
+  if (isBatchSubmitting) {
+    return;
+  }
+
   const input = document.getElementById("batchInput").value.trim();
   if (!input) {
     showMessage("Enter transaction data", "error");
     return;
   }
+
+  isBatchSubmitting = true;
 
   const lines = input.split("\n").filter((l) => l.trim());
   let successCount = 0;
@@ -382,6 +400,7 @@ async function submitBatch(e) {
   document.getElementById("batchInput").value = "";
   await loadTransactions();
   updateQuickBalances();
+  isBatchSubmitting = false;
 }
 
 async function loadTransactions() {
@@ -469,14 +488,12 @@ function displayTransactions() {
       ? `<span style="color:#0066cc;font-weight:500">${escapeHtml(vendorMap[t.vendor_id] || "Unknown")}</span>`
       : "";
 
-    const isUndoable = idx === 0 && lastTransaction;
-
     return `
-      <div class="log-entry ${isUndoable ? "undo-available" : ""}">
+      <div class="log-entry">
         <div class="log-date">${formatDateShort(t.date)}</div>
         <div class="log-amount">$${amount.toFixed(2)}</div>
         <div class="log-description">${typeBadge} <span style="color:#999;font-size:11px">${propStr}</span> ${vendorStr} ${escapeHtml(t.memo || "")}</div>
-        <div class="log-undo" data-id="${t.id}" title="Undo">↶</div>
+        <div class="log-undo" data-id="${t.id}" title="Delete transaction">✕</div>
       </div>
     `;
   });
@@ -487,9 +504,7 @@ function displayTransactions() {
   document.querySelectorAll(".log-undo").forEach((el) => {
     el.addEventListener("click", async (e) => {
       const id = e.target.dataset.id;
-      if (
-        confirm("Reverse this transaction? A reversing entry will be created.")
-      ) {
+      if (confirm("Delete this transaction? This cannot be undone.")) {
         await undoTransaction(id);
       }
     });
@@ -583,14 +598,28 @@ function getTransactionType(txn) {
 }
 
 async function undoTransaction(id) {
+  if (!confirm("Delete this transaction? This cannot be undone.")) {
+    return;
+  }
+
   try {
-    // This would require a dedicated undo endpoint
-    // For now, create a reversing entry
-    showMessage("Create reversing entry in progress...", "info");
+    const response = await fetch(`${apiUrl}/accounting/ledger/${id}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Failed to delete transaction");
+    }
+
+    showMessage("✓ Transaction deleted", "success");
     await loadTransactions();
+    updateQuickBalances();
   } catch (error) {
     console.error("Error undoing:", error);
-    showMessage("Error undoing transaction", "error");
+    showMessage(error.message, "error");
   }
 }
 

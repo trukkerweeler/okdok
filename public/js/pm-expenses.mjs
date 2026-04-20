@@ -10,6 +10,7 @@ let user;
 let expenses = [];
 let vendors = [];
 let filterCategory = "";
+let isSubmitting = false;
 
 const categoryLabels = {
   office: "Office Supplies",
@@ -119,6 +120,11 @@ function populateVendorDropdown() {
 async function submitExpense(e) {
   e.preventDefault();
 
+  // Prevent double submission
+  if (isSubmitting) {
+    return;
+  }
+
   const category = document.getElementById("entryCategory").value;
   const amount = parseFloat(document.getElementById("entryAmount").value);
   const description = document.getElementById("entryDescription").value;
@@ -132,6 +138,8 @@ async function submitExpense(e) {
     );
     return;
   }
+
+  isSubmitting = true;
 
   try {
     // Use the date string directly - it's already in YYYY-MM-DD format from the input
@@ -168,9 +176,11 @@ async function submitExpense(e) {
 
     // Focus back to category for next entry
     document.getElementById("entryCategory").focus();
+    isSubmitting = false;
   } catch (error) {
     console.error("Error:", error);
     showMessage(error.message, "error");
+    isSubmitting = false;
   }
 }
 
