@@ -181,7 +181,7 @@ function displayProperties(properties) {
 
   if (!properties || properties.length === 0) {
     tbody.innerHTML =
-      '<tr><td colspan="8" class="text-center text-muted py-4">No properties found. Click + to add one.</td></tr>';
+      '<tr><td colspan="9" class="text-center text-muted py-4">No properties found. Click + to add one.</td></tr>';
     return;
   }
 

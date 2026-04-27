@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Manage property leases." />
+    <meta name="author" content="OKDOK Accounting" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Abel&family=Tapestry&display=swap"
+    />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="icon" href="images/okdok.png" />
+    <title>Leases - Accounting</title>
+  </head>
+  <body class="leases-page">
+    <header id="header"></header>
+
+    <div
+      class="recordsaddrecordheading d-flex align-items-center justify-content-between my-3"
+    >
+      <h1 class="h3 mb-0">Leases</h1>
+      <button
+        class="addrecordheadingbutton btn btn-primary btn-lg"
+        id="addLeaseBtn"
+        title="Add Lease"
+      >
+        +
+      </button>
+    </div>
+
+    <main class="container my-4">
+      <!-- Leases Table -->
+      <div id="leasesTableContainer" class="table-responsive">
+        <table id="leasesTable" class="table table-striped table-hover">
+          <thead class="table-light">
+            <tr>
+              <th>Lease #</th>
+              <th>Property</th>
+              <th>Lease Start</th>
+              <th>Lease End</th>
+              <th>Monthly Rent</th>
+              <th>Deposit</th>
+              <th>Tenants</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Populated by JavaScript -->
+          </tbody>
+        </table>
+      </div>
+
+      <div
+        id="noLeasesMessage"
+        class="alert alert-info mt-4"
+        style="display: none"
+      >
+        No leases found. Click the + button to add a lease.
+      </div>
+    </main>
+
+    <!-- Add/Edit Lease Dialog -->
+    <dialog id="addLeaseDialog" class="dialog p-0">
+      <div class="dialog-header p-3 border-bottom">
+        <h2 class="h5 mb-0">Add New Lease</h2>
+      </div>
+      <form id="addLeaseForm" class="form p-3">
+        <input type="hidden" id="leaseId" name="lease_id" />
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label for="leaseProperty" class="form-label required"
+              >Property</label
+            >
+            <select
+              id="leaseProperty"
+              name="property_id"
+              required
+              class="form-select"
+            >
+              <option value="">Select a property...</option>
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label for="leaseNumber" class="form-label required">Lease #</label>
+            <input
+              type="text"
+              id="leaseNumber"
+              name="lease_number"
+              required
+              placeholder="Auto-generated"
+              readonly
+              class="form-control"
+            />
+          </div>
+
+          <div class="col-md-6">
+            <label for="leaseStart" class="form-label required"
+              >Lease Start</label
+            >
+            <input
+              type="date"
+              id="leaseStart"
+              name="lease_start"
+              required
+              class="form-control"
+            />
+          </div>
+
+          <div class="col-md-6">
+            <label for="leaseEnd" class="form-label">Lease End</label>
+            <input
+              type="date"
+              id="leaseEnd"
+              name="lease_end"
+              class="form-control"
+            />
+          </div>
+
+          <div class="col-md-6">
+            <label for="monthlyRent" class="form-label required"
+              >Monthly Rent</label
+            >
+            <input
+              type="number"
+              id="monthlyRent"
+              name="monthly_rent"
+              required
+              step="0.01"
+              placeholder="0.00"
+              class="form-control"
+            />
+          </div>
+
+          <div class="col-md-6">
+            <label for="securityDeposit" class="form-label"
+              >Security Deposit</label
+            >
+            <input
+              type="number"
+              id="securityDeposit"
+              name="security_deposit"
+              step="0.01"
+              placeholder="0.00"
+              class="form-control"
+            />
+          </div>
+
+          <div class="col-md-6">
+            <label for="leaseStatus" class="form-label">Status</label>
+            <select id="leaseStatus" name="status" class="form-select">
+              <option value="active" selected>Active</option>
+              <option value="pending">Pending</option>
+              <option value="ended">Ended</option>
+            </select>
+          </div>
+
+          <div class="col-md-12">
+            <label for="leaseNotes" class="form-label">Notes</label>
+            <textarea
+              id="leaseNotes"
+              name="notes"
+              rows="3"
+              placeholder="Additional notes about the lease"
+              class="form-control"
+            ></textarea>
+          </div>
+        </div>
+
+        <div class="mt-4 d-flex gap-2 justify-content-end">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick="document.getElementById('addLeaseDialog').close()"
+          >
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-primary">Save Lease</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Manage Lease Tenants Dialog -->
+    <dialog id="manageLeaseTenants" class="dialog p-0">
+      <div class="dialog-header p-3 border-bottom">
+        <h2 class="h5 mb-0">Manage Lease Tenants</h2>
+      </div>
+      <div class="p-3">
+        <div id="leaseTenantsList" class="mb-4">
+          <!-- Populated by JavaScript -->
+        </div>
+
+        <div class="mb-3">
+          <label for="addTenantSelect" class="form-label">Add Tenant</label>
+          <div class="input-group">
+            <select id="addTenantSelect" class="form-select">
+              <option value="">Select a tenant...</option>
+            </select>
+            <button
+              type="button"
+              class="btn btn-primary"
+              onclick="addTenantToLease()"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+
+        <div class="d-flex gap-2 justify-content-end">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick="document.getElementById('manageLeaseTenants').close()"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <script type="module" src="/js/leases.mjs"></script>
+  </body>
+</html>

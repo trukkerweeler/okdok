@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Invoice management and generation." />
+    <meta name="author" content="OKDOK Accounting" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Abel&family=Tapestry&display=swap"
+    />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="icon" href="images/okdok.png" />
+    <title>Invoices - Accounting</title>
+  </head>
+  <body class="invoices-page">
+    <header id="header"></header>
+    <div
+      class="recordsaddrecordheading d-flex align-items-center justify-content-between my-3"
+    >
+      <h1 class="h3 mb-0">Invoices</h1>
+      <button
+        class="addrecordheadingbutton btn btn-primary btn-lg"
+        id="addInvoiceBtn"
+        title="Add Invoice"
+      >
+        +
+      </button>
+    </div>
+    <main class="container my-4">
+      <!-- Add Invoice Dialog -->
+      <dialog id="addInvoiceDialog" class="dialog p-0">
+        <div class="dialog-header p-3 border-bottom">
+          <h2 class="h5 mb-0">Add New Invoice</h2>
+        </div>
+        <form id="addInvoiceForm" class="form p-3">
+          <div class="row g-3">
+            <div class="col-md-12">
+              <label for="invoiceLease" class="form-label required"
+                >Lease</label
+              >
+              <select
+                id="invoiceLease"
+                name="lease_id"
+                required
+                class="form-control"
+              >
+                <option value="">Select a lease...</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label for="invoiceOwner" class="form-label required"
+                >Owner</label
+              >
+              <select
+                id="invoiceOwner"
+                name="owner_id"
+                required
+                class="form-control"
+              >
+                <option value="">Select an owner...</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label for="invoiceProperty" class="form-label">Property</label>
+              <select
+                id="invoiceProperty"
+                name="property_id"
+                class="form-control"
+              >
+                <option value="">Select a property (optional)...</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label for="invoiceNumber" class="form-label required"
+                >Invoice #</label
+              >
+              <input
+                type="text"
+                id="invoiceNumber"
+                name="invoice_number"
+                placeholder="Auto-generated"
+                class="form-control"
+                readonly
+              />
+            </div>
+
+            <div class="col-md-6">
+              <label for="invoiceAmount" class="form-label required"
+                >Amount</label
+              >
+              <input
+                type="number"
+                id="invoiceAmount"
+                name="amount"
+                required
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-6">
+              <label for="invoiceDate" class="form-label required"
+                >Invoice Date</label
+              >
+              <input
+                type="date"
+                id="invoiceDate"
+                name="invoice_date"
+                required
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-6">
+              <label for="invoiceDueDate" class="form-label">Due Date</label>
+              <input
+                type="date"
+                id="invoiceDueDate"
+                name="due_date"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-6">
+              <label for="invoiceStatus" class="form-label">Status</label>
+              <select id="invoiceStatus" name="status" class="form-control">
+                <option value="pending">Pending</option>
+                <option value="sent">Sent</option>
+                <option value="paid">Paid</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+
+            <div class="col-12">
+              <label for="invoiceDescription" class="form-label"
+                >Description</label
+              >
+              <input
+                type="text"
+                id="invoiceDescription"
+                name="description"
+                placeholder="e.g., Deposit + First Month Rent"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-12">
+              <label for="invoiceNotes" class="form-label">Notes</label>
+              <textarea
+                id="invoiceNotes"
+                name="notes"
+                placeholder="Additional notes..."
+                class="form-control"
+                rows="3"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="dialog-actions d-flex gap-2 justify-content-end mt-3">
+            <button id="saveInvoiceBtn" type="submit" class="btn btn-primary">
+              <span class="btn-icon">✓</span>
+              Save Invoice
+            </button>
+            <button
+              type="button"
+              id="closeAddInvoiceBtn"
+              class="btn btn-secondary"
+            >
+              <span class="btn-icon">✕</span>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </dialog>
+
+      <!-- Invoices List Table -->
+      <div class="table-responsive">
+        <table class="table table-hover table-sm" id="invoicesTable">
+          <thead class="table-light">
+            <tr>
+              <th>Invoice #</th>
+              <th>Owner</th>
+              <th>Property</th>
+              <th>Lease</th>
+              <th>Amount</th>
+              <th>Invoice Date</th>
+              <th>Due Date</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="invoicesTableBody">
+            <tr>
+              <td colspan="9" class="text-center text-muted py-4">
+                Loading invoices...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+
+    <!-- Print Modal -->
+    <dialog id="printInvoiceDialog" class="dialog p-0" style="max-width: 800px">
+      <div
+        class="dialog-header p-3 border-bottom d-flex justify-content-between align-items-center"
+      >
+        <h2 class="h5 mb-0">Print Invoice</h2>
+        <button
+          type="button"
+          id="closePrintDialog"
+          class="btn btn-sm btn-secondary"
+        >
+          ✕
+        </button>
+      </div>
+      <div id="printContent" class="p-4"></div>
+      <div
+        class="dialog-actions d-flex gap-2 justify-content-end p-3 border-top"
+      >
+        <button id="printBtn" type="button" class="btn btn-primary">
+          🖨️ Print
+        </button>
+        <button type="button" id="closeAfterPrintBtn" class="btn btn-secondary">
+          Close
+        </button>
+      </div>
+    </dialog>
+
+    <footer id="footer"></footer>
+  </body>
+  <script type="module" src="/js/invoices.mjs"></script>
+</html>

@@ -10,6 +10,9 @@ const propertyRepository = require("../repositories/propertyRepository");
 const tenantRepository = require("../repositories/tenantRepository");
 const accountRepository = require("../repositories/accountRepository");
 const ledgerRepository = require("../repositories/ledgerRepository");
+const invoiceRepository = require("../repositories/invoiceRepository");
+const paymentRepository = require("../repositories/paymentRepository");
+const leaseRepository = require("../repositories/leaseRepository");
 const ledgerService = require("../services/ledgerService");
 
 // ===================================================
@@ -317,6 +320,43 @@ router.delete("/tenants/:id", async (req, res) => {
     res.status(204).send();
   } catch (error) {
     console.error("Error deleting tenant:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /properties/:property_id/primary-tenant/:tenant_id - Set primary tenant for property
+ */
+router.put(
+  "/properties/:property_id/primary-tenant/:tenant_id",
+  async (req, res) => {
+    try {
+      const property = await propertyRepository.setPrimaryTenant(
+        req.params.property_id,
+        req.params.tenant_id,
+      );
+      res.json(property);
+    } catch (error) {
+      console.error("Error setting primary tenant:", error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
+/**
+ * GET /properties/:property_id/with-primary-tenant - Get property with primary tenant details
+ */
+router.get("/properties/:property_id/with-primary-tenant", async (req, res) => {
+  try {
+    const property = await propertyRepository.getByIdWithPrimaryTenant(
+      req.params.property_id,
+    );
+    if (!property) {
+      return res.status(404).json({ error: "Property not found" });
+    }
+    res.json(property);
+  } catch (error) {
+    console.error("Error fetching property with primary tenant:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -868,6 +908,583 @@ router.delete("/ledger/:id", async (req, res) => {
     }
   } catch (error) {
     console.error("Error deleting ledger entry:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===================================================
+// INVOICE ENDPOINTS
+// ===================================================
+
+/**
+ * GET /invoices - Get all invoices
+ */
+router.get("/invoices", async (req, res) => {
+  try {
+    const invoices = await invoiceRepository.getAll();
+    res.json(invoices);
+  } catch (error) {
+    console.error("Error fetching invoices:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /invoices/:id - Get invoice by ID
+ */
+router.get("/invoices/:id", async (req, res) => {
+  try {
+    const invoice = await invoiceRepository.getById(req.params.id);
+    if (!invoice) {
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+    res.json(invoice);
+  } catch (error) {
+    console.error("Error fetching invoice:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /invoices/property/:property_id - Get invoices for a property
+ */
+router.get("/invoices/property/:property_id", async (req, res) => {
+  try {
+    const invoices = await invoiceRepository.getByPropertyId(
+      req.params.property_id,
+    );
+    res.json(invoices);
+  } catch (error) {
+    console.error("Error fetching invoices:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /invoices/tenant/:tenant_id - Get invoices for a tenant
+ */
+router.get("/invoices/tenant/:tenant_id", async (req, res) => {
+  try {
+    const invoices = await invoiceRepository.getByTenantId(
+      req.params.tenant_id,
+    );
+    res.json(invoices);
+  } catch (error) {
+    console.error("Error fetching invoices:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /invoices/owner/:owner_id - Get invoices for an owner
+ */
+router.get("/invoices/owner/:owner_id", async (req, res) => {
+  try {
+    const invoices = await invoiceRepository.getByOwnerId(req.params.owner_id);
+    res.json(invoices);
+  } catch (error) {
+    console.error("Error fetching invoices:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /invoices - Create new invoice
+ */
+router.post("/invoices", async (req, res) => {
+  try {
+    const {
+      property_id,
+      tenant_id,
+      owner_id,
+      invoice_number,
+      amount,
+      invoice_date,
+      due_date,
+      description,
+      status,
+      notes,
+    } = req.body;
+
+    if (!owner_id || !amount) {
+      return res
+        .status(400)
+        .json({ error: "owner_id and amount are required" });
+    }
+
+    const nextInvoiceNumber =
+      invoice_number || (await invoiceRepository.getNextInvoiceNumber());
+
+    const invoice = await invoiceRepository.create({
+      property_id,
+      tenant_id,
+      owner_id,
+      invoice_number: nextInvoiceNumber,
+      amount,
+      invoice_date: invoice_date || new Date().toISOString().split("T")[0],
+      due_date,
+      description: description || "Deposit + First Month Rent",
+      status: status || "pending",
+      notes,
+    });
+
+    res.status(201).json(invoice);
+  } catch (error) {
+    console.error("Error creating invoice:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /invoices/:id - Update invoice
+ */
+router.put("/invoices/:id", async (req, res) => {
+  try {
+    const {
+      property_id,
+      tenant_id,
+      owner_id,
+      invoice_number,
+      amount,
+      invoice_date,
+      due_date,
+      description,
+      status,
+      notes,
+    } = req.body;
+
+    const invoice = await invoiceRepository.update(req.params.id, {
+      property_id,
+      tenant_id,
+      owner_id,
+      invoice_number,
+      amount,
+      invoice_date,
+      due_date,
+      description,
+      status,
+      notes,
+    });
+
+    res.json(invoice);
+  } catch (error) {
+    console.error("Error updating invoice:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /invoices/:id - Delete invoice
+ */
+router.delete("/invoices/:id", async (req, res) => {
+  try {
+    await invoiceRepository.delete(req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting invoice:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===================================================
+// INVOICE PAYMENT ENDPOINTS
+// ===================================================
+
+/**
+ * GET /payments - Get all invoice payments
+ */
+router.get("/payments", async (req, res) => {
+  try {
+    const payments = await paymentRepository.getAll();
+    res.json(payments);
+  } catch (error) {
+    console.error("Error fetching payments:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /payments/:id - Get payment by ID
+ */
+router.get("/payments/:id", async (req, res) => {
+  try {
+    const payment = await paymentRepository.getById(req.params.id);
+    if (!payment) {
+      return res.status(404).json({ error: "Payment not found" });
+    }
+    res.json(payment);
+  } catch (error) {
+    console.error("Error fetching payment:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /payments/invoice/:invoice_id - Get payments for an invoice
+ */
+router.get("/payments/invoice/:invoice_id", async (req, res) => {
+  try {
+    const payments = await paymentRepository.getByInvoiceId(
+      req.params.invoice_id,
+    );
+    res.json(payments);
+  } catch (error) {
+    console.error("Error fetching payments:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /payments/owner/:owner_id - Get payments for an owner
+ */
+router.get("/payments/owner/:owner_id", async (req, res) => {
+  try {
+    const payments = await paymentRepository.getByOwnerId(req.params.owner_id);
+    res.json(payments);
+  } catch (error) {
+    console.error("Error fetching payments:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /invoice-balance/:invoice_id - Get invoice balance (total due - paid)
+ */
+router.get("/invoice-balance/:invoice_id", async (req, res) => {
+  try {
+    const balance = await paymentRepository.getInvoiceBalance(
+      req.params.invoice_id,
+    );
+    if (!balance) {
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+    res.json(balance);
+  } catch (error) {
+    console.error("Error calculating invoice balance:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /payments - Record a new invoice payment
+ */
+router.post("/payments", async (req, res) => {
+  try {
+    const {
+      invoice_id,
+      payment_date,
+      amount_paid,
+      payment_method,
+      reference_number,
+      notes,
+    } = req.body;
+
+    if (!invoice_id || !amount_paid) {
+      return res
+        .status(400)
+        .json({ error: "invoice_id and amount_paid are required" });
+    }
+
+    // Verify invoice exists
+    const invoice = await invoiceRepository.getById(invoice_id);
+    if (!invoice) {
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+
+    const payment = await paymentRepository.create({
+      invoice_id,
+      payment_date: payment_date || new Date().toISOString().split("T")[0],
+      amount_paid,
+      payment_method,
+      reference_number,
+      notes,
+    });
+
+    // Post to ledger if amount paid matches or exceeds invoice amount
+    const balance = await paymentRepository.getInvoiceBalance(invoice_id);
+    if (balance && balance.balance <= 0) {
+      // Invoice is fully paid - post to ledger
+      try {
+        let trustAccount =
+          await accountRepository.getByName("Trust Cash Account");
+        if (!trustAccount) {
+          console.warn("Trust Cash Account not found for ledger posting");
+        } else {
+          // Find appropriate income account based on invoice description
+          let incomeAccount = await accountRepository.getByName("Rent Income");
+          if (
+            invoice.description &&
+            invoice.description.toLowerCase().includes("deposit")
+          ) {
+            incomeAccount = await accountRepository.getByName(
+              "Security Deposit Liability",
+            );
+          }
+
+          if (incomeAccount && trustAccount.id !== incomeAccount.id) {
+            await ledgerService.postTransaction({
+              debit_account_id: trustAccount.id,
+              credit_account_id: incomeAccount.id,
+              amount: balance.invoice_amount,
+              memo: `Payment received for invoice ${invoice.invoice_number}`,
+              property_id: invoice.property_id,
+              owner_id: invoice.owner_id,
+              date: payment_date || new Date().toISOString().split("T")[0],
+            });
+          }
+        }
+      } catch (ledgerError) {
+        console.error(
+          "Warning: Could not post payment to ledger:",
+          ledgerError,
+        );
+        // Don't fail the payment if ledger posting fails
+      }
+    }
+
+    res.status(201).json(payment);
+  } catch (error) {
+    console.error("Error creating payment:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /payments/:id - Update payment
+ */
+router.put("/payments/:id", async (req, res) => {
+  try {
+    const {
+      invoice_id,
+      payment_date,
+      amount_paid,
+      payment_method,
+      reference_number,
+      notes,
+    } = req.body;
+
+    const payment = await paymentRepository.update(req.params.id, {
+      invoice_id,
+      payment_date,
+      amount_paid,
+      payment_method,
+      reference_number,
+      notes,
+    });
+
+    res.json(payment);
+  } catch (error) {
+    console.error("Error updating payment:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /payments/:id - Delete payment
+ */
+router.delete("/payments/:id", async (req, res) => {
+  try {
+    await paymentRepository.delete(req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting payment:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===================================================
+// LEASE ENDPOINTS
+// ===================================================
+
+/**
+ * GET /leases - Get all leases
+ */
+router.get("/leases", async (req, res) => {
+  try {
+    const status = req.query.status || null;
+    const leases = await leaseRepository.getAll(status);
+    res.json(leases);
+  } catch (error) {
+    console.error("Error fetching leases:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /leases/:id - Get lease by ID with tenants
+ */
+router.get("/leases/:id", async (req, res) => {
+  try {
+    const lease = await leaseRepository.getById(req.params.id);
+    if (!lease) {
+      return res.status(404).json({ error: "Lease not found" });
+    }
+    const tenants = await leaseRepository.getTenantsForLease(req.params.id);
+    res.json({ ...lease, tenants });
+  } catch (error) {
+    console.error("Error fetching lease:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /leases/property/:property_id - Get leases for a property
+ */
+router.get("/leases/property/:property_id", async (req, res) => {
+  try {
+    const leases = await leaseRepository.getByPropertyId(
+      req.params.property_id,
+    );
+    res.json(leases);
+  } catch (error) {
+    console.error("Error fetching leases for property:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /leases - Create new lease
+ */
+router.post("/leases", async (req, res) => {
+  try {
+    const {
+      property_id,
+      lease_number,
+      lease_start,
+      lease_end,
+      monthly_rent,
+      security_deposit,
+      status,
+      notes,
+    } = req.body;
+
+    const lease = await leaseRepository.create({
+      property_id,
+      lease_number,
+      lease_start,
+      lease_end,
+      monthly_rent,
+      security_deposit,
+      status,
+      notes,
+    });
+    res.status(201).json(lease);
+  } catch (error) {
+    console.error("Error creating lease:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /leases/:id - Update lease
+ */
+router.put("/leases/:id", async (req, res) => {
+  try {
+    const {
+      lease_start,
+      lease_end,
+      monthly_rent,
+      security_deposit,
+      status,
+      notes,
+    } = req.body;
+
+    const lease = await leaseRepository.update(req.params.id, {
+      lease_start,
+      lease_end,
+      monthly_rent,
+      security_deposit,
+      status,
+      notes,
+    });
+    res.json(lease);
+  } catch (error) {
+    console.error("Error updating lease:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /leases/:id - Delete lease
+ */
+router.delete("/leases/:id", async (req, res) => {
+  try {
+    await leaseRepository.delete(req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting lease:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /leases/:lease_id/tenants/:tenant_id - Add tenant to lease
+ */
+router.post("/leases/:lease_id/tenants/:tenant_id", async (req, res) => {
+  try {
+    const { is_primary } = req.body;
+    await leaseRepository.addTenant(
+      req.params.lease_id,
+      req.params.tenant_id,
+      is_primary || false,
+    );
+    const tenants = await leaseRepository.getTenantsForLease(
+      req.params.lease_id,
+    );
+    res.json(tenants);
+  } catch (error) {
+    console.error("Error adding tenant to lease:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /leases/:lease_id/tenants/:tenant_id - Remove tenant from lease
+ */
+router.delete("/leases/:lease_id/tenants/:tenant_id", async (req, res) => {
+  try {
+    await leaseRepository.removeTenant(
+      req.params.lease_id,
+      req.params.tenant_id,
+    );
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error removing tenant from lease:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /leases/:lease_id/primary-tenant/:tenant_id - Set primary tenant for lease
+ */
+router.put("/leases/:lease_id/primary-tenant/:tenant_id", async (req, res) => {
+  try {
+    const tenant = await leaseRepository.setPrimaryTenant(
+      req.params.lease_id,
+      req.params.tenant_id,
+    );
+    res.json(tenant);
+  } catch (error) {
+    console.error("Error setting primary tenant:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /leases/:lease_id/next-number - Get next lease number for property
+ */
+router.get("/leases/:lease_id/next-number", async (req, res) => {
+  try {
+    const lease = await leaseRepository.getById(req.params.lease_id);
+    if (!lease) {
+      return res.status(404).json({ error: "Lease not found" });
+    }
+    const nextNumber = await leaseRepository.getNextLeaseNumber(
+      lease.property_id,
+    );
+    res.json({ next_lease_number: nextNumber });
+  } catch (error) {
+    console.error("Error getting next lease number:", error);
     res.status(500).json({ error: error.message });
   }
 });

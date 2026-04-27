@@ -66,11 +66,45 @@ const propertyRepository = {
   /**
    * Update property
    */
-  update: async (id, { address, city, state, zip, status }) => {
-    const sql = `UPDATE properties SET address = ?, city = ?, state = ?, zip = ?, status = ?, updated_at = NOW() 
+  update: async (
+    id,
+    { address, city, state, zip, status, primary_tenant_id },
+  ) => {
+    const sql = `UPDATE properties SET address = ?, city = ?, state = ?, zip = ?, status = ?, primary_tenant_id = ?, updated_at = NOW() 
                  WHERE id = ?`;
-    await db.query(sql, [address, city, state, zip, status, id]);
+    await db.query(sql, [
+      address,
+      city,
+      state,
+      zip,
+      status,
+      primary_tenant_id,
+      id,
+    ]);
     return propertyRepository.getById(id);
+  },
+
+  /**
+   * Set primary tenant for a property
+   */
+  setPrimaryTenant: async (property_id, tenant_id) => {
+    const sql = `UPDATE properties SET primary_tenant_id = ?, updated_at = NOW() WHERE id = ?`;
+    await db.query(sql, [tenant_id, property_id]);
+    return propertyRepository.getByIdWithPrimaryTenant(property_id);
+  },
+
+  /**
+   * Get property by ID with primary tenant details
+   */
+  getByIdWithPrimaryTenant: async (id) => {
+    const sql = `SELECT p.*, 
+                 pt.id as primary_tenant_id, pt.name as primary_tenant_name, 
+                 pt.email as primary_tenant_email, pt.phone as primary_tenant_phone
+                 FROM properties p
+                 LEFT JOIN tenants pt ON p.primary_tenant_id = pt.id
+                 WHERE p.id = ?`;
+    const results = await db.query(sql, [id]);
+    return results[0] || null;
   },
 
   /**
