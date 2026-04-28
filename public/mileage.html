@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Mileage tracking for business travel." />
+    <meta name="author" content="OKDOK Accounting" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Abel&family=Tapestry&display=swap"
+    />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="icon" href="images/okdok.png" />
+    <title>Mileage Tracker - Accounting</title>
+  </head>
+  <body class="mileage-page">
+    <header id="header"></header>
+    <div
+      class="recordsaddrecordheading d-flex align-items-center justify-content-between my-3"
+    >
+      <h1 class="h3 mb-0">Mileage Tracker</h1>
+      <button
+        class="addrecordheadingbutton btn btn-primary btn-lg"
+        id="addMileageBtn"
+        title="Log Mileage"
+      >
+        +
+      </button>
+    </div>
+    <main class="container my-4">
+      <!-- Add Mileage Dialog -->
+      <dialog id="addMileageDialog" class="dialog p-0">
+        <div class="dialog-header p-3 border-bottom">
+          <h2 class="h5 mb-0">Log Mileage</h2>
+        </div>
+        <form id="addMileageForm" class="form p-3">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label for="mileageDate" class="form-label required">Date</label>
+              <input
+                type="date"
+                id="mileageDate"
+                name="date"
+                required
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-6">
+              <label for="mileageMiles" class="form-label required"
+                >Miles Driven</label
+              >
+              <input
+                type="number"
+                id="mileageMiles"
+                name="miles_driven"
+                required
+                step="0.1"
+                min="0"
+                placeholder="0.0"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-6">
+              <label for="mileageCategory" class="form-label required"
+                >Category</label
+              >
+              <select
+                id="mileageCategory"
+                name="category"
+                required
+                class="form-control"
+              >
+                <option value="">Select category...</option>
+                <option value="property_visit">Property Visit</option>
+                <option value="tenant_meeting">Tenant Meeting</option>
+                <option value="maintenance">Maintenance</option>
+                <option value="supply_run">Supply Run</option>
+                <option value="posting">Posting</option>
+                <option value="inspection">Inspection</option>
+                <option value="showing">Showing</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label for="mileageProperty" class="form-label"
+                >Property (Optional)</label
+              >
+              <select
+                id="mileageProperty"
+                name="property_id"
+                class="form-control"
+              >
+                <option value="">Select a property...</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label for="mileageStarting" class="form-label"
+                >Starting Location</label
+              >
+              <input
+                type="text"
+                id="mileageStarting"
+                name="starting_location"
+                placeholder="e.g., Home, Office"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-6">
+              <label for="mileageEnding" class="form-label"
+                >Ending Location</label
+              >
+              <input
+                type="text"
+                id="mileageEnding"
+                name="ending_location"
+                placeholder="e.g., Property address"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-12">
+              <label for="mileagePurpose" class="form-label required"
+                >Purpose</label
+              >
+              <input
+                type="text"
+                id="mileagePurpose"
+                name="purpose"
+                required
+                placeholder="What was the business purpose of this trip?"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-12">
+              <label for="mileageNotes" class="form-label">Notes</label>
+              <textarea
+                id="mileageNotes"
+                name="notes"
+                placeholder="Additional notes..."
+                class="form-control"
+                rows="2"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="dialog-actions d-flex gap-2 justify-content-end mt-3">
+            <button id="saveMileageBtn" type="submit" class="btn btn-primary">
+              <span class="btn-icon">✓</span>
+              Log Mileage
+            </button>
+            <button
+              type="button"
+              id="closeAddMileageBtn"
+              class="btn btn-secondary"
+            >
+              <span class="btn-icon">✕</span>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </dialog>
+
+      <!-- Statistics Section -->
+      <div class="row mb-4 mt-4">
+        <div class="col-md-3">
+          <div class="card p-3 text-center">
+            <div class="small text-muted">This Month</div>
+            <div class="h4 mb-0" id="thisMonthMiles">0.0</div>
+            <div class="small text-muted">Miles</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card p-3 text-center">
+            <div class="small text-muted">This Month</div>
+            <div class="h4 mb-0" id="thisMonthTrips">0</div>
+            <div class="small text-muted">Trips</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card p-3 text-center">
+            <div class="small text-muted">Tax Deduction</div>
+            <div class="h4 mb-0" id="taxDeduction">$0.00</div>
+            <div class="small text-muted">2024 Rate: $0.67/mi</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card p-3 text-center">
+            <div class="small text-muted">Average</div>
+            <div class="h4 mb-0" id="avgMiles">0.0</div>
+            <div class="small text-muted">Miles per Trip</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mileage Table -->
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead class="table-light">
+            <tr>
+              <th>Date</th>
+              <th>Category</th>
+              <th>Purpose</th>
+              <th>Property</th>
+              <th>Miles</th>
+              <th>Locations</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="mileageTableBody">
+            <tr>
+              <td colspan="7" class="text-center text-muted py-4">
+                No mileage entries yet. Click the + button to add one.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+    <footer id="footer"></footer>
+
+    <script type="module" src="/js/mileage.mjs"></script>
+  </body>
+</html>

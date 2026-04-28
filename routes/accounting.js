@@ -13,6 +13,7 @@ const ledgerRepository = require("../repositories/ledgerRepository");
 const invoiceRepository = require("../repositories/invoiceRepository");
 const paymentRepository = require("../repositories/paymentRepository");
 const leaseRepository = require("../repositories/leaseRepository");
+const mileageRepository = require("../repositories/mileageRepository");
 const ledgerService = require("../services/ledgerService");
 
 // ===================================================
@@ -995,6 +996,7 @@ router.post("/invoices", async (req, res) => {
   try {
     const {
       property_id,
+      lease_id,
       tenant_id,
       owner_id,
       invoice_number,
@@ -1017,6 +1019,7 @@ router.post("/invoices", async (req, res) => {
 
     const invoice = await invoiceRepository.create({
       property_id,
+      lease_id,
       tenant_id,
       owner_id,
       invoice_number: nextInvoiceNumber,
@@ -1042,6 +1045,7 @@ router.put("/invoices/:id", async (req, res) => {
   try {
     const {
       property_id,
+      lease_id,
       tenant_id,
       owner_id,
       invoice_number,
@@ -1055,6 +1059,7 @@ router.put("/invoices/:id", async (req, res) => {
 
     const invoice = await invoiceRepository.update(req.params.id, {
       property_id,
+      lease_id,
       tenant_id,
       owner_id,
       invoice_number,
@@ -1485,6 +1490,194 @@ router.get("/leases/:lease_id/next-number", async (req, res) => {
     res.json({ next_lease_number: nextNumber });
   } catch (error) {
     console.error("Error getting next lease number:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===================================================
+// MILEAGE TRACKING ENDPOINTS
+// ===================================================
+
+/**
+ * GET /mileage - Get all mileage entries
+ */
+router.get("/mileage", async (req, res) => {
+  try {
+    const mileage = await mileageRepository.getAll();
+    res.json(mileage);
+  } catch (error) {
+    console.error("Error fetching mileage:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /mileage/:id - Get mileage entry by ID
+ */
+router.get("/mileage/:id", async (req, res) => {
+  try {
+    const mileage = await mileageRepository.getById(req.params.id);
+    if (!mileage) {
+      return res.status(404).json({ error: "Mileage entry not found" });
+    }
+    res.json(mileage);
+  } catch (error) {
+    console.error("Error fetching mileage:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /mileage/property/:id - Get mileage entries for a property
+ */
+router.get("/mileage/property/:property_id", async (req, res) => {
+  try {
+    const mileage = await mileageRepository.getByPropertyId(
+      req.params.property_id,
+    );
+    res.json(mileage);
+  } catch (error) {
+    console.error("Error fetching property mileage:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /mileage/owner/:id - Get mileage entries for an owner
+ */
+router.get("/mileage/owner/:owner_id", async (req, res) => {
+  try {
+    const mileage = await mileageRepository.getByOwnerId(req.params.owner_id);
+    res.json(mileage);
+  } catch (error) {
+    console.error("Error fetching owner mileage:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /mileage/range/:startDate/:endDate - Get mileage for date range
+ */
+router.get("/mileage/range/:startDate/:endDate", async (req, res) => {
+  try {
+    const mileage = await mileageRepository.getByDateRange(
+      req.params.startDate,
+      req.params.endDate,
+    );
+    res.json(mileage);
+  } catch (error) {
+    console.error("Error fetching mileage by date range:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /mileage/summary/:year/:month - Get monthly mileage summary
+ */
+router.get("/mileage/summary/:year/:month", async (req, res) => {
+  try {
+    const summary = await mileageRepository.getMonthlySummary(
+      req.params.year,
+      req.params.month,
+    );
+    const totals = await mileageRepository.getTotalMiles(
+      `${req.params.year}-${String(req.params.month).padStart(2, "0")}-01`,
+      `${req.params.year}-${String(req.params.month).padStart(2, "0")}-31`,
+    );
+    res.json({ summary, totals });
+  } catch (error) {
+    console.error("Error fetching mileage summary:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /mileage - Create new mileage entry
+ */
+router.post("/mileage", async (req, res) => {
+  try {
+    const {
+      date,
+      miles_driven,
+      starting_location,
+      ending_location,
+      purpose,
+      category,
+      property_id,
+      owner_id,
+      notes,
+    } = req.body;
+
+    if (!date || !miles_driven || !purpose || !category) {
+      return res.status(400).json({
+        error: "date, miles_driven, purpose, and category are required",
+      });
+    }
+
+    const mileage = await mileageRepository.create({
+      date,
+      miles_driven,
+      starting_location,
+      ending_location,
+      purpose,
+      category,
+      property_id,
+      owner_id,
+      notes,
+    });
+
+    res.status(201).json(mileage);
+  } catch (error) {
+    console.error("Error creating mileage entry:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /mileage/:id - Update mileage entry
+ */
+router.put("/mileage/:id", async (req, res) => {
+  try {
+    const {
+      date,
+      miles_driven,
+      starting_location,
+      ending_location,
+      purpose,
+      category,
+      property_id,
+      owner_id,
+      notes,
+    } = req.body;
+
+    const mileage = await mileageRepository.update(req.params.id, {
+      date,
+      miles_driven,
+      starting_location,
+      ending_location,
+      purpose,
+      category,
+      property_id,
+      owner_id,
+      notes,
+    });
+
+    res.json(mileage);
+  } catch (error) {
+    console.error("Error updating mileage entry:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /mileage/:id - Delete mileage entry
+ */
+router.delete("/mileage/:id", async (req, res) => {
+  try {
+    await mileageRepository.delete(req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting mileage entry:", error);
     res.status(500).json({ error: error.message });
   }
 });
