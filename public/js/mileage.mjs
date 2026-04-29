@@ -195,13 +195,15 @@ function displayMileage() {
         ? `${entry.starting_location} → ${entry.ending_location || "?"}`
         : "Not specified";
 
+      const milesValue = parseFloat(entry.miles_driven) || 0;
+
       return `
         <tr>
           <td>${formatDate(entry.date)}</td>
           <td><span class="badge bg-info">${categoryDisplay}</span></td>
           <td>${entry.purpose}</td>
           <td>${entry.property_address ? entry.property_address : "-"}</td>
-          <td class="fw-bold">${entry.miles_driven.toFixed(1)} mi</td>
+          <td class="fw-bold">${milesValue.toFixed(1)} mi</td>
           <td class="small">${locations}</td>
           <td>
             <button class="btn btn-sm btn-outline-primary" onclick="editMileage(${entry.id})">Edit</button>
@@ -273,11 +275,11 @@ function updateStatistics() {
     );
   });
 
-  // Calculate totals
-  const totalMiles = thisMonthEntries.reduce(
-    (sum, entry) => sum + entry.miles_driven,
-    0,
-  );
+  // Calculate totals with type conversion
+  const totalMiles = thisMonthEntries.reduce((sum, entry) => {
+    return sum + (parseFloat(entry.miles_driven) || 0);
+  }, 0);
+
   const tripCount = thisMonthEntries.length;
   const avgMiles = tripCount > 0 ? totalMiles / tripCount : 0;
   const taxDeduction = totalMiles * IRS_MILEAGE_RATE;
