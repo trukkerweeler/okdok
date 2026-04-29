@@ -14,6 +14,7 @@ const invoiceRepository = require("../repositories/invoiceRepository");
 const paymentRepository = require("../repositories/paymentRepository");
 const leaseRepository = require("../repositories/leaseRepository");
 const mileageRepository = require("../repositories/mileageRepository");
+const companySettingsRepository = require("../repositories/companySettingsRepository");
 const ledgerService = require("../services/ledgerService");
 
 // ===================================================
@@ -1678,6 +1679,66 @@ router.delete("/mileage/:id", async (req, res) => {
     res.status(204).send();
   } catch (error) {
     console.error("Error deleting mileage entry:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===================================================
+// COMPANY SETTINGS ENDPOINTS
+// ===================================================
+
+/**
+ * GET /company-settings - Get all company settings
+ */
+router.get("/company-settings", async (req, res) => {
+  try {
+    const settings = await companySettingsRepository.getAll();
+    res.json(settings);
+  } catch (error) {
+    console.error("Error fetching company settings:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /company-settings/:key - Get specific company setting
+ */
+router.get("/company-settings/:key", async (req, res) => {
+  try {
+    const value = await companySettingsRepository.getByKey(req.params.key);
+    res.json({ key: req.params.key, value });
+  } catch (error) {
+    console.error("Error fetching company setting:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /company-settings/:key - Update specific company setting
+ */
+router.put("/company-settings/:key", async (req, res) => {
+  try {
+    const { value } = req.body;
+    const result = await companySettingsRepository.update(
+      req.params.key,
+      value,
+    );
+    res.json(result);
+  } catch (error) {
+    console.error("Error updating company setting:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /company-settings - Update multiple company settings
+ */
+router.put("/company-settings", async (req, res) => {
+  try {
+    const results = await companySettingsRepository.updateMultiple(req.body);
+    res.json(results);
+  } catch (error) {
+    console.error("Error updating company settings:", error);
     res.status(500).json({ error: error.message });
   }
 });

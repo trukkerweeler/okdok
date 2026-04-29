@@ -12,8 +12,8 @@ let user;
 let properties = [];
 let mileage = [];
 
-// IRS mileage rate (2024)
-const IRS_MILEAGE_RATE = 0.67;
+// IRS mileage rate (2026)
+const IRS_MILEAGE_RATE = 0.725;
 
 // Initialize handler function
 async function initializeMileage() {

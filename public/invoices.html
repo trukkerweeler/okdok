@@ -13,6 +13,43 @@
     <link rel="stylesheet" href="/css/styles.css" />
     <link rel="icon" href="images/okdok.png" />
     <title>Invoices - Accounting</title>
+    <style>
+      /* Invoice row shading by property address - override Bootstrap table-hover */
+      #invoicesTable tbody .invoice-shade-1,
+      #invoicesTable tbody .invoice-shade-1 td {
+        background-color: #e3f2fd !important;
+      }
+      #invoicesTable tbody .invoice-shade-2,
+      #invoicesTable tbody .invoice-shade-2 td {
+        background-color: #f4faf4 !important;
+      }
+      #invoicesTable tbody .invoice-shade-3,
+      #invoicesTable tbody .invoice-shade-3 td {
+        background-color: #fff3e0 !important;
+      }
+      #invoicesTable tbody .invoice-shade-4,
+      #invoicesTable tbody .invoice-shade-4 td {
+        background-color: #fce4ec !important;
+      }
+      #invoicesTable tbody .invoice-shade-5,
+      #invoicesTable tbody .invoice-shade-5 td {
+        background-color: #f3e5f5 !important;
+      }
+
+      /* Prevent hover from overriding */
+      #invoicesTable tbody .invoice-shade-1:hover,
+      #invoicesTable tbody .invoice-shade-1:hover td,
+      #invoicesTable tbody .invoice-shade-2:hover,
+      #invoicesTable tbody .invoice-shade-2:hover td,
+      #invoicesTable tbody .invoice-shade-3:hover,
+      #invoicesTable tbody .invoice-shade-3:hover td,
+      #invoicesTable tbody .invoice-shade-4:hover,
+      #invoicesTable tbody .invoice-shade-4:hover td,
+      #invoicesTable tbody .invoice-shade-5:hover,
+      #invoicesTable tbody .invoice-shade-5:hover td {
+        background-color: inherit !important;
+      }
+    </style>
   </head>
   <body class="invoices-page">
     <header id="header"></header>
@@ -186,7 +223,7 @@
           <thead class="table-light">
             <tr>
               <th>Invoice #</th>
-              <th>Owner</th>
+              <th>Tenant</th>
               <th>Property</th>
               <th>Lease</th>
               <th>Amount</th>

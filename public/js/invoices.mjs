@@ -386,6 +386,28 @@ async function loadInvoicesData() {
     }
 
     invoices = await response.json();
+
+    // Fetch lease/tenant data for each invoice
+    for (let i = 0; i < invoices.length; i++) {
+      if (invoices[i].lease_id && !invoices[i].tenant_name) {
+        try {
+          const leaseResponse = await fetch(
+            `${apiUrl}/accounting/leases/${invoices[i].lease_id}`,
+            { credentials: "include" },
+          );
+          if (leaseResponse.ok) {
+            const leaseData = await leaseResponse.json();
+            // Get first tenant name from the lease
+            if (leaseData.tenants && leaseData.tenants.length > 0) {
+              invoices[i].tenant_name = leaseData.tenants[0].name;
+            }
+          }
+        } catch (error) {
+          console.warn(`Could not fetch lease ${invoices[i].lease_id}:`, error);
+        }
+      }
+    }
+
     console.debug("Invoices loaded:", invoices);
     displayInvoices();
   } catch (error) {
@@ -404,17 +426,38 @@ function displayInvoices() {
     return;
   }
 
+  // Create a map of property addresses to colors for consistent shading
+  const addressColorMap = {};
+  const colors = [
+    "invoice-shade-1", // Light blue
+    "invoice-shade-2", // Light green
+    "invoice-shade-3", // Light orange
+    "invoice-shade-4", // Light pink
+    "invoice-shade-5", // Light lavender
+  ];
+  let colorIndex = 0;
+
+  invoices.forEach((invoice) => {
+    const address = invoice.property_address || "—";
+    if (!addressColorMap[address]) {
+      addressColorMap[address] = colors[colorIndex % colors.length];
+      colorIndex++;
+    }
+  });
+
   tbody.innerHTML = invoices
     .map((invoice) => {
       const statusBadgeClass = getStatusBadgeClass(invoice.status);
       const amountFormatted = formatCurrency(invoice.amount);
       const invoiceDate = formatDate(invoice.invoice_date);
       const dueDate = invoice.due_date ? formatDate(invoice.due_date) : "—";
+      const address = invoice.property_address || "—";
+      const shadeClass = addressColorMap[address];
 
       return `
-        <tr>
+        <tr class="${shadeClass}">
           <td><strong>${escapeHtml(invoice.invoice_number)}</strong></td>
-          <td>${escapeHtml(invoice.owner_name || "—")}</td>
+          <td>${escapeHtml(invoice.tenant_name || "—")}</td>
           <td>${
             invoice.property_address
               ? `${escapeHtml(invoice.property_address)}`
@@ -507,9 +550,20 @@ async function showPrintDialog(invoiceId) {
       }
     }
 
+    // Fetch company settings
+    let settings = {};
+    try {
+      const settingsResponse = await fetch("/accounting/company-settings");
+      if (settingsResponse.ok) {
+        settings = await settingsResponse.json();
+      }
+    } catch (error) {
+      console.warn("Could not fetch company settings:", error);
+    }
+
     const printContent = document.getElementById("printContent");
     if (printContent) {
-      printContent.innerHTML = generateInvoiceHTML(invoice);
+      printContent.innerHTML = generateInvoiceHTML(invoice, settings);
       document.getElementById("printInvoiceDialog").showModal();
     }
   } catch (error) {
@@ -518,12 +572,22 @@ async function showPrintDialog(invoiceId) {
   }
 }
 
-function generateInvoiceHTML(invoice) {
+function generateInvoiceHTML(invoice, settings = {}) {
   const invoiceDate = formatDate(invoice.invoice_date);
   const dueDate = invoice.due_date
     ? formatDate(invoice.due_date)
     : "Not specified";
   const amount = formatCurrency(invoice.amount);
+
+  // Get settings with defaults
+  const companyName = settings.company_name || "OKPM LLC";
+  const contactName = settings.invoice_contact_name || "Tim Kent";
+  const contactPhone = settings.invoice_contact_phone || "801-367-6587";
+  const contactEmail = settings.invoice_contact_email || "";
+  const companyAddress = settings.company_address || "149 S Canyon View Drive";
+  const companyCity = settings.company_city || "Elk Ridge";
+  const companyState = settings.company_state || "UT";
+  const companyZip = settings.company_zip || "84651";
 
   return `
     <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
@@ -531,8 +595,8 @@ function generateInvoiceHTML(invoice) {
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 2px solid #007bff; padding-bottom: 20px;">
         <div>
           <h1 style="margin: 0; color: #007bff;">INVOICE</h1>
-          <p style="margin: 5px 0; color: #333; font-weight: bold;">OKPM LLC</p>
-          <p style="margin: 5px 0; color: #666; font-size: 14px;">149 S Canyon View Drive, Elk Ridge, UT 84651</p>
+          <p style="margin: 5px 0; color: #333; font-weight: bold;">${escapeHtml(companyName)}</p>
+          <p style="margin: 5px 0; color: #666; font-size: 14px;">${escapeHtml(companyAddress)}, ${escapeHtml(companyCity)}, ${escapeHtml(companyState)} ${escapeHtml(companyZip)}</p>
         </div>
         <div style="text-align: right;">
           <p style="margin: 0; font-weight: bold;">Invoice #: ${escapeHtml(invoice.invoice_number)}</p>
@@ -544,10 +608,10 @@ function generateInvoiceHTML(invoice) {
       <!-- Bill To / From -->
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 30px;">
         <div>
-          <h3 style="margin: 0 0 10px 0; color: #007bff; font-size: 14px; text-transform: uppercase;">Issued By:</h3>
-          <p style="margin: 0 0 5px 0;"><strong>OKPM LLC</strong></p>
-          <p style="margin: 0 0 5px 0;">149 S Canyon View Drive</p>
-          <p style="margin: 0 0 5px 0;">Elk Ridge, UT 84651</p>
+          <h3 style="margin: 0 0 10px 0; color: #007bff; font-size: 14px; text-transform: uppercase;">Contact:</h3>
+          <p style="margin: 0 0 5px 0;"><strong>${escapeHtml(contactName)}</strong></p>
+          <p style="margin: 0 0 5px 0;">Phone: ${escapeHtml(contactPhone)}</p>
+          ${contactEmail ? `<p style="margin: 0 0 5px 0;">Email: ${escapeHtml(contactEmail)}</p>` : ""}
         </div>
         <div>
           <h3 style="margin: 0 0 10px 0; color: #007bff; font-size: 14px; text-transform: uppercase;">Bill To:</h3>
