@@ -891,6 +891,51 @@ router.post("/vendors", async (req, res) => {
 });
 
 /**
+ * PUT /vendors/:id - Update a vendor
+ */
+router.put("/vendors/:id", async (req, res) => {
+  try {
+    const { name, description } = req.body;
+
+    if (!name || name.trim() === "") {
+      return res.status(400).json({ error: "Vendor name is required" });
+    }
+
+    const vendor = await vendorsRepository.update(req.params.id, {
+      name,
+      description,
+    });
+
+    if (!vendor) {
+      return res.status(404).json({ error: "Vendor not found" });
+    }
+
+    res.json(vendor);
+  } catch (error) {
+    console.error("Error updating vendor:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /vendors/:id - Delete a vendor
+ */
+router.delete("/vendors/:id", async (req, res) => {
+  try {
+    const vendor = await vendorsRepository.getById(req.params.id);
+    if (!vendor) {
+      return res.status(404).json({ error: "Vendor not found" });
+    }
+
+    await vendorsRepository.delete(req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting vendor:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * DELETE /ledger/:id - Delete a ledger entry (undo transaction)
  */
 router.delete("/ledger/:id", async (req, res) => {

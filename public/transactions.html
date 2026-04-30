@@ -304,6 +304,49 @@
         }
       }
 
+      .log-header {
+        display: grid;
+        grid-template-columns: 80px 80px 1fr 60px;
+        gap: 12px;
+        padding: 10px;
+        background: #f8f9fa;
+        border-bottom: 2px solid #e0e0e0;
+        font-weight: 600;
+        font-size: 12px;
+        color: #666;
+        text-transform: uppercase;
+        user-select: none;
+        position: sticky;
+        top: 0;
+      }
+
+      .log-header-col {
+        position: relative;
+        display: flex;
+        align-items: center;
+        padding-right: 4px;
+      }
+
+      .log-header-col:not(:last-child)::after {
+        content: "";
+        position: absolute;
+        right: -6px;
+        top: 0;
+        bottom: 0;
+        width: 12px;
+        cursor: col-resize;
+        background: transparent;
+      }
+
+      .log-header-col:not(:last-child):hover::after {
+        background: linear-gradient(
+          90deg,
+          transparent 40%,
+          #007bff 50%,
+          transparent 60%
+        );
+      }
+
       .empty-log {
         text-align: center;
         padding: 40px 20px;
@@ -545,10 +588,18 @@
         </div>
 
         <!-- Transaction Log -->
-        <div class="transaction-log" id="transactionLog">
-          <div class="empty-log">
-            <div class="empty-log-icon">📭</div>
-            <div>No transactions yet. Add one to get started.</div>
+        <div id="transactionLogContainer">
+          <div class="log-header">
+            <div class="log-header-col" data-col="0">Date</div>
+            <div class="log-header-col" data-col="1">Amount</div>
+            <div class="log-header-col" data-col="2">Description</div>
+            <div class="log-header-col" data-col="3">Action</div>
+          </div>
+          <div class="transaction-log" id="transactionLog">
+            <div class="empty-log">
+              <div class="empty-log-icon">📭</div>
+              <div>No transactions yet. Add one to get started.</div>
+            </div>
           </div>
         </div>
       </div>

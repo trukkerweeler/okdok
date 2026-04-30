@@ -51,6 +51,24 @@ const vendorsRepository = {
       created_at: new Date(),
     };
   },
+
+  /**
+   * Update a vendor
+   */
+  update: async (id, { name, description = null }) => {
+    const sql =
+      "UPDATE vendors SET name = ?, description = ?, updated_at = NOW() WHERE id = ?";
+    await db.query(sql, [name, description, id]);
+    return await vendorsRepository.getById(id);
+  },
+
+  /**
+   * Delete a vendor
+   */
+  delete: async (id) => {
+    const sql = "DELETE FROM vendors WHERE id = ?";
+    await db.query(sql, [id]);
+  },
 };
 
 module.exports = vendorsRepository;

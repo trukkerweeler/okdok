@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Supplier management." />
+    <meta name="author" content="OKDOK Accounting" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Abel&family=Tapestry&display=swap"
+    />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="icon" href="images/okdok.png" />
+    <title>Suppliers - Accounting</title>
+  </head>
+  <body class="suppliers-page">
+    <header id="header"></header>
+    <div
+      class="recordsaddrecordheading d-flex align-items-center justify-content-between my-3"
+    >
+      <h1 class="h3 mb-0">Suppliers</h1>
+      <button
+        class="addrecordheadingbutton btn btn-primary btn-lg"
+        id="addSupplierBtn"
+        title="Add Supplier"
+      >
+        +
+      </button>
+    </div>
+    <main class="container my-4">
+      <!-- Add/Edit Supplier Dialog -->
+      <dialog id="supplierDialog" class="dialog p-0">
+        <div class="dialog-header p-3 border-bottom">
+          <h2 class="h5 mb-0" id="supplierDialogTitle">Add New Supplier</h2>
+        </div>
+        <form id="supplierForm" class="form p-3">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label for="supplierName" class="form-label required"
+                >Supplier Name</label
+              >
+              <input
+                type="text"
+                id="supplierName"
+                name="name"
+                required
+                placeholder="Enter supplier name"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-6">
+              <label for="supplierContact" class="form-label"
+                >Contact Person</label
+              >
+              <input
+                type="text"
+                id="supplierContact"
+                name="contact"
+                placeholder="Contact person name"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-6">
+              <label for="supplierEmail" class="form-label">Email</label>
+              <input
+                type="email"
+                id="supplierEmail"
+                name="email"
+                placeholder="supplier@example.com"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-6">
+              <label for="supplierPhone" class="form-label">Phone</label>
+              <input
+                type="tel"
+                id="supplierPhone"
+                name="phone"
+                placeholder="Enter phone number"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-12">
+              <label for="supplierAddress" class="form-label">Address</label>
+              <input
+                type="text"
+                id="supplierAddress"
+                name="address"
+                placeholder="Street address"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-6">
+              <label for="supplierWebsite" class="form-label">Website</label>
+              <input
+                type="url"
+                id="supplierWebsite"
+                name="website"
+                placeholder="https://example.com"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-md-6">
+              <label for="supplierCategory" class="form-label">Category</label>
+              <input
+                type="text"
+                id="supplierCategory"
+                name="category"
+                placeholder="e.g., Maintenance, Supplies"
+                class="form-control"
+              />
+            </div>
+
+            <div class="col-12">
+              <label for="supplierDescription" class="form-label">Notes</label>
+              <textarea
+                id="supplierDescription"
+                name="description"
+                placeholder="Additional notes about this supplier"
+                class="form-control"
+                rows="3"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="dialog-actions d-flex gap-2 justify-content-end mt-3">
+            <button id="saveSupplierBtn" type="submit" class="btn btn-primary">
+              <span class="btn-icon">✓</span>
+              Save Supplier
+            </button>
+            <button
+              type="button"
+              id="closeSupplierBtn"
+              class="btn btn-secondary"
+            >
+              <span class="btn-icon">✕</span>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </dialog>
+
+      <!-- Suppliers List Table -->
+      <div class="table-responsive">
+        <table class="table table-hover table-sm" id="suppliersTable">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Contact</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Category</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="suppliersTableBody">
+            <tr>
+              <td colspan="8" class="text-center text-muted py-4">
+                Loading suppliers...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+    <footer id="footer"></footer>
+  </body>
+  <script type="module" src="/js/suppliers.mjs"></script>
+</html>

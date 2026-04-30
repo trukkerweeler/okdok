@@ -29,6 +29,7 @@ async function initializeTransactions() {
   user = await getSessionUser();
   await loadOwnersAndProperties();
   setupEventListeners();
+  setupColumnResizing();
   setupKeyboardShortcuts();
   setTodayDate();
   await loadTransactions();
@@ -100,6 +101,103 @@ function setupKeyboardShortcuts() {
       document.getElementById("entryForm").dispatchEvent(new Event("submit"));
     }
   });
+}
+
+// Column Resizing
+const DEFAULT_COLUMN_WIDTHS = ["80px", "80px", "1fr", "60px"];
+const COLUMNS_STORAGE_KEY = "transactionLogColumnWidths";
+
+function loadColumnWidths() {
+  const saved = localStorage.getItem(COLUMNS_STORAGE_KEY);
+  return saved ? JSON.parse(saved) : DEFAULT_COLUMN_WIDTHS;
+}
+
+function saveColumnWidths(widths) {
+  localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(widths));
+}
+
+function applyColumnWidths(widths) {
+  const container = document.getElementById("transactionLogContainer");
+  if (!container) return;
+
+  const header = container.querySelector(".log-header");
+  const logEntries = container.querySelectorAll(".log-entry");
+
+  const gridTemplate = widths.join(" ");
+  if (header) header.style.gridTemplateColumns = gridTemplate;
+  logEntries.forEach((entry) => {
+    entry.style.gridTemplateColumns = gridTemplate;
+  });
+}
+
+function setupColumnResizing() {
+  const header = document.querySelector(".log-header");
+  if (!header) return;
+
+  const headerCols = header.querySelectorAll(".log-header-col");
+  const columnCount = headerCols.length;
+
+  let resizingColIndex = null;
+  let startX = 0;
+  let currentWidths = loadColumnWidths();
+
+  headerCols.forEach((col, index) => {
+    if (index === columnCount - 1) return; // Skip last column
+
+    col.addEventListener("mousedown", (e) => {
+      // Check if mouse is over the resize handle (right edge)
+      const rect = col.getBoundingClientRect();
+      const distFromRight = rect.right - e.clientX;
+      if (distFromRight > 8) return; // Not on the handle
+
+      e.preventDefault();
+      resizingColIndex = index;
+      startX = e.clientX;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+
+      const onMouseMove = (moveEvent) => {
+        if (resizingColIndex === null) return;
+
+        const delta = moveEvent.clientX - startX;
+        currentWidths = loadColumnWidths();
+
+        // Parse current width
+        const currentWidth = currentWidths[resizingColIndex];
+        let newWidth;
+
+        if (currentWidth === "1fr") {
+          // If flexible, convert to pixel-based
+          const container = document.getElementById("transactionLogContainer");
+          const logPanel = container.closest(".log-panel");
+          const containerWidth = logPanel ? logPanel.clientWidth : 600;
+          newWidth = Math.max(40, containerWidth / 4 + delta) + "px";
+        } else {
+          const pixelWidth = parseFloat(currentWidth);
+          newWidth = Math.max(40, pixelWidth + delta) + "px";
+        }
+
+        currentWidths[resizingColIndex] = newWidth;
+        applyColumnWidths(currentWidths);
+        startX = moveEvent.clientX;
+      };
+
+      const onMouseUp = () => {
+        document.body.style.cursor = "default";
+        document.body.style.userSelect = "auto";
+        saveColumnWidths(currentWidths);
+        resizingColIndex = null;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    });
+  });
+
+  // Apply saved widths on load
+  applyColumnWidths(currentWidths);
 }
 
 function switchType(type) {
@@ -470,6 +568,8 @@ function displayTransactions() {
         <div>${filterProperty ? "No transactions for this property." : "No transactions yet. Add one to get started."}</div>
       </div>
     `;
+    // Still apply column widths for consistency
+    applyColumnWidths(loadColumnWidths());
     return;
   }
 
@@ -509,6 +609,9 @@ function displayTransactions() {
       }
     });
   });
+
+  // Apply saved column widths
+  applyColumnWidths(loadColumnWidths());
 }
 
 function updateStats() {
