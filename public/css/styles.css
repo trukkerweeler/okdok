@@ -725,6 +725,25 @@ footer {
   padding: 1rem;
 }
 
+/* ===== BALANCE DISPLAY STYLING ===== */
+.balance-display {
+  background-color: #f0f0f0 !important;
+  font-weight: 500;
+}
+
+.balance-display.balance-zero {
+  background-color: #d4edda !important;
+  color: #155724;
+  border-color: #c3e6cb !important;
+}
+
+.balance-display.balance-pending {
+  background-color: #fff3cd !important;
+  color: #856404;
+  border-color: #ffeebf !important;
+}
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;

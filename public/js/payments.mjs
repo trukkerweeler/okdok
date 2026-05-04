@@ -107,6 +107,7 @@ async function updateBalanceDisplay() {
 
   const invoiceId = invoiceSelect.value;
   balanceDisplay.value = "";
+  balanceDisplay.classList.remove("balance-zero", "balance-pending");
   if (amountInput) amountInput.max = "";
 
   if (invoiceId) {
@@ -118,6 +119,13 @@ async function updateBalanceDisplay() {
         const balance = await response.json();
         const balanceAmount = parseFloat(balance.balance).toFixed(2);
         balanceDisplay.value = `$${balanceAmount}`;
+
+        // Color code the balance field
+        if (balanceAmount == 0) {
+          balanceDisplay.classList.add("balance-zero");
+        } else {
+          balanceDisplay.classList.add("balance-pending");
+        }
 
         // Set max payment to remaining balance
         if (amountInput) {

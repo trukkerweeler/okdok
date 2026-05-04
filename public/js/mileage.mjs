@@ -63,6 +63,30 @@ function setupEventListeners() {
       }
     });
   }
+
+  // Close button for edit mileage dialog
+  const closeEditBtn = document.getElementById("closeEditMileageBtn");
+  if (closeEditBtn) {
+    closeEditBtn.addEventListener("click", () => {
+      document.getElementById("editMileageDialog").close();
+    });
+  }
+
+  // Save edit mileage form
+  const editMileageForm = document.getElementById("editMileageForm");
+  if (editMileageForm) {
+    editMileageForm.addEventListener("submit", saveEditMileage);
+  }
+
+  // Close edit dialog on outside click
+  const editMileageDialog = document.getElementById("editMileageDialog");
+  if (editMileageDialog) {
+    editMileageDialog.addEventListener("click", (e) => {
+      if (e.target === editMileageDialog) {
+        editMileageDialog.close();
+      }
+    });
+  }
 }
 
 async function loadReferenceData() {
@@ -92,6 +116,19 @@ function populatePropertyDropdown() {
     option.textContent = `${prop.address}, ${prop.city}, ${prop.state}`;
     propertySelect.appendChild(option);
   });
+
+  // Also populate edit dialog property dropdown
+  const editPropertySelect = document.getElementById("editMileageProperty");
+  if (editPropertySelect) {
+    editPropertySelect.innerHTML =
+      '<option value="">Select a property...</option>';
+    properties.forEach((prop) => {
+      const option = document.createElement("option");
+      option.value = prop.id;
+      option.textContent = `${prop.address}, ${prop.city}, ${prop.state}`;
+      editPropertySelect.appendChild(option);
+    });
+  }
 }
 
 function setDefaultDate() {
@@ -311,7 +348,74 @@ window.editMileage = editMileage;
 window.deleteMileage = deleteMileage;
 
 async function editMileage(id) {
-  console.log("Edit mileage:", id);
-  // TODO: Implement edit functionality
-  alert("Edit functionality coming soon!");
+  const entry = mileage.find((m) => m.id === id);
+  if (!entry) {
+    alert("Mileage entry not found");
+    return;
+  }
+
+  // Populate form with entry data
+  document.getElementById("editMileageId").value = entry.id;
+  document.getElementById("editMileageDate").value = entry.date;
+  document.getElementById("editMileageMiles").value = entry.miles_driven;
+  document.getElementById("editMileageCategory").value = entry.category;
+  document.getElementById("editMileageProperty").value =
+    entry.property_id || "";
+  document.getElementById("editMileageStarting").value =
+    entry.starting_location || "";
+  document.getElementById("editMileageEnding").value =
+    entry.ending_location || "";
+  document.getElementById("editMileagePurpose").value = entry.purpose;
+  document.getElementById("editMileageNotes").value = entry.notes || "";
+
+  // Open dialog
+  document.getElementById("editMileageDialog").showModal();
+}
+
+async function saveEditMileage(event) {
+  event.preventDefault();
+  const form = document.getElementById("editMileageForm");
+  const formData = new FormData(form);
+  const id = formData.get("id");
+
+  try {
+    const dataJson = {
+      date: formData.get("date"),
+      miles_driven: parseFloat(formData.get("miles_driven")),
+      starting_location: formData.get("starting_location") || null,
+      ending_location: formData.get("ending_location") || null,
+      purpose: formData.get("purpose"),
+      category: formData.get("category"),
+      property_id: formData.get("property_id")
+        ? parseInt(formData.get("property_id"))
+        : null,
+      notes: formData.get("notes") || null,
+    };
+
+    const response = await fetch(`${mileageUrl}/${id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(dataJson),
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      alert(`Error: ${error.error || "Failed to update mileage"}`);
+      return;
+    }
+
+    const updatedMileage = await response.json();
+    console.log("Mileage updated:", updatedMileage);
+
+    // Close dialog and refresh list
+    document.getElementById("editMileageDialog").close();
+    await loadMileageData();
+    updateStatistics();
+  } catch (error) {
+    console.error("Error updating mileage:", error);
+    alert(`Error: ${error.message}`);
+  }
 }
