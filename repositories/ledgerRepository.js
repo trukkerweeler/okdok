@@ -133,9 +133,10 @@ const ledgerRepository = {
     const sql = `
       SELECT le.* 
       FROM ledger_entries le
+      JOIN accounts debit_acc ON le.debit_account_id = debit_acc.id
       WHERE le.owner_id = ?
-        AND le.reimbursement_status = 'unreimbursed'
-        AND le.memo LIKE '%expense%'
+        AND debit_acc.name = 'Owner Expense'
+        AND (le.reimbursement_status = 'unreimbursed' OR le.reimbursement_status IS NULL)
       ORDER BY le.date ASC
     `;
     return db.query(sql, [owner_id]);

@@ -597,13 +597,57 @@ async function showDistributionExpenseDialog(owner_id) {
         .join("");
 
       expensesList.innerHTML = html;
+
+      // Add change listeners to all checkboxes for live preview
+      const checkboxes = document.querySelectorAll(".expense-checkbox");
+      checkboxes.forEach((checkbox) => {
+        checkbox.addEventListener("change", updateDistributionPreview);
+      });
     }
+
+    // Initialize preview with gross amount
+    updateDistributionPreview();
 
     // Open dialog
     document.getElementById("distributionExpenseDialog").showModal();
   } catch (error) {
     console.error("Error loading expenses:", error);
     showMessage("Failed to load unreimbursed expenses", "error");
+  }
+}
+
+/**
+ * Update live preview of net distribution amount
+ */
+function updateDistributionPreview() {
+  if (!pendingDistribution) return;
+
+  const grossAmount = parseFloat(pendingDistribution.amount) || 0;
+  const checkboxes = document.querySelectorAll(
+    "#expensesList .expense-checkbox:checked",
+  );
+  const selectedTotal = Array.from(checkboxes).reduce((sum, cb) => {
+    return sum + (parseFloat(cb.dataset.amount) || 0);
+  }, 0);
+  const netAmount = grossAmount - selectedTotal;
+
+  document.getElementById("previewGross").textContent = `$${grossAmount.toFixed(
+    2,
+  )}`;
+  document.getElementById("previewExpenses").textContent = `-$${selectedTotal.toFixed(
+    2,
+  )}`;
+  document.getElementById("previewNet").textContent = `$${Math.max(
+    0,
+    netAmount,
+  ).toFixed(2)}`;
+
+  // Warn if net is negative or zero
+  const netDisplay = document.getElementById("previewNet");
+  if (netAmount <= 0) {
+    netDisplay.style.color = "#dc3545";
+  } else {
+    netDisplay.style.color = "#007bff";
   }
 }
 
@@ -769,11 +813,18 @@ function displayTransactions() {
       ? `<span style="color:#0066cc;font-weight:500">${escapeHtml(vendorMap[t.vendor_id] || "Unknown")}</span>`
       : "";
 
+    // Add reimbursement status badge for expenses
+    const reimbursementBadge = type === "expense" 
+      ? t.reimbursement_status === "reimbursed"
+        ? `<span class="log-type-badge badge-reimbursed">✓ Reimbursed</span>`
+        : `<span class="log-type-badge badge-unreimbursed">Pending</span>`
+      : "";
+
     return `
       <div class="log-entry">
         <div class="log-date">${formatDateShort(t.date)}</div>
         <div class="log-amount">$${amount.toFixed(2)}</div>
-        <div class="log-description">${typeBadge} <span style="color:#999;font-size:11px">${propStr}</span> ${vendorStr} ${escapeHtml(t.memo || "")}</div>
+        <div class="log-description">${typeBadge}${reimbursementBadge} <span style="color:#999;font-size:11px">${propStr}</span> ${vendorStr} ${escapeHtml(t.memo || "")}</div>
         <div class="log-undo" data-id="${t.id}" title="Delete transaction">✕</div>
       </div>
     `;
