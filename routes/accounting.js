@@ -1334,7 +1334,26 @@ router.post("/payments", async (req, res) => {
     // Post to ledger if amount paid matches or exceeds invoice amount
     const balance = await paymentRepository.getInvoiceBalance(invoice_id);
     if (balance && balance.balance <= 0) {
-      // Invoice is fully paid - post to ledger
+      // Invoice is fully paid - update status and post to ledger
+      try {
+        // Update invoice status to "paid"
+        await invoiceRepository.update(invoice_id, {
+          property_id: invoice.property_id,
+          lease_id: invoice.lease_id,
+          owner_id: invoice.owner_id,
+          invoice_number: invoice.invoice_number,
+          amount: invoice.amount,
+          invoice_date: invoice.invoice_date,
+          due_date: invoice.due_date,
+          description: invoice.description,
+          status: "paid",
+          notes: invoice.notes,
+        });
+      } catch (statusError) {
+        console.error("Warning: Could not update invoice status:", statusError);
+        // Don't fail the payment if status update fails
+      }
+
       try {
         let trustAccount =
           await accountRepository.getByName("Trust Cash Account");
@@ -1405,6 +1424,31 @@ router.put("/payments/:id", async (req, res) => {
       transaction_type: transaction_type || "tenant_to_manager",
     });
 
+    // Update invoice status if it's fully paid
+    try {
+      const balance = await paymentRepository.getInvoiceBalance(invoice_id);
+      if (balance && balance.balance <= 0) {
+        const invoice = await invoiceRepository.getById(invoice_id);
+        if (invoice) {
+          await invoiceRepository.update(invoice_id, {
+            property_id: invoice.property_id,
+            lease_id: invoice.lease_id,
+            owner_id: invoice.owner_id,
+            invoice_number: invoice.invoice_number,
+            amount: invoice.amount,
+            invoice_date: invoice.invoice_date,
+            due_date: invoice.due_date,
+            description: invoice.description,
+            status: "paid",
+            notes: invoice.notes,
+          });
+        }
+      }
+    } catch (statusError) {
+      console.error("Warning: Could not update invoice status:", statusError);
+      // Don't fail the payment update if status update fails
+    }
+
     res.json(payment);
   } catch (error) {
     console.error("Error updating payment:", error);
@@ -1417,7 +1461,41 @@ router.put("/payments/:id", async (req, res) => {
  */
 router.delete("/payments/:id", async (req, res) => {
   try {
+    // Get payment details before deleting to know which invoice to check
+    const payment = await paymentRepository.getById(req.params.id);
+
     await paymentRepository.delete(req.params.id);
+
+    // Update invoice status if needed
+    if (payment && payment.invoice_id) {
+      try {
+        const balance = await paymentRepository.getInvoiceBalance(
+          payment.invoice_id,
+        );
+        if (balance && balance.balance > 0) {
+          // Invoice is no longer fully paid
+          const invoice = await invoiceRepository.getById(payment.invoice_id);
+          if (invoice) {
+            await invoiceRepository.update(payment.invoice_id, {
+              property_id: invoice.property_id,
+              lease_id: invoice.lease_id,
+              owner_id: invoice.owner_id,
+              invoice_number: invoice.invoice_number,
+              amount: invoice.amount,
+              invoice_date: invoice.invoice_date,
+              due_date: invoice.due_date,
+              description: invoice.description,
+              status: "pending",
+              notes: invoice.notes,
+            });
+          }
+        }
+      } catch (statusError) {
+        console.error("Warning: Could not update invoice status:", statusError);
+        // Don't fail the delete if status update fails
+      }
+    }
+
     res.status(204).send();
   } catch (error) {
     console.error("Error deleting payment:", error);

@@ -212,6 +212,19 @@ const ledgerService = {
       }
     });
 
+    const balance =
+      rentCollected - expensesIncurred - managementFees - distributions;
+
+    return {
+      owner_id,
+      rentCollected,
+      expensesIncurred,
+      managementFees,
+      distributions,
+      balance,
+    };
+  },
+
   /**
    * Get unreimbursed owner expenses
    * @param {number} owner_id
