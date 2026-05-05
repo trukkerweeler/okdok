@@ -605,6 +605,47 @@
       </div>
     </div>
 
+    <!-- Distribution Expense Selection Dialog -->
+    <dialog id="distributionExpenseDialog" class="dialog p-0">
+      <div class="dialog-header p-3 border-bottom">
+        <h2 class="h5 mb-0">Select Expenses to Reimburse</h2>
+      </div>
+      <form id="distributionExpenseForm" class="form p-3">
+        <div class="expense-selection-container">
+          <div
+            id="expensesList"
+            style="max-height: 400px; overflow-y: auto"
+          ></div>
+        </div>
+
+        <div
+          style="
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e0e0e0;
+          "
+        >
+          <small style="color: #666">
+            Select which expenses to include in this reimbursement. Only
+            unreimbursed expenses are shown.
+          </small>
+        </div>
+
+        <div class="dialog-actions d-flex gap-2 justify-content-end mt-3">
+          <button
+            type="button"
+            id="closeDistributionDialog"
+            class="btn btn-sm btn-secondary"
+          >
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-sm btn-primary">
+            Reimburse Selected
+          </button>
+        </div>
+      </form>
+    </dialog>
+
     <footer id="footer"></footer>
 
     <script type="module" src="/js/transactions.mjs"></script>

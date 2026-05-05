@@ -22,6 +22,7 @@ let isBatchMode = false;
 let filterProperty = null;
 let isSubmitting = false;
 let isBatchSubmitting = false;
+let pendingDistribution = null; // Store distribution data for expense selection
 
 // Initialize
 async function initializeTransactions() {
@@ -81,6 +82,37 @@ function setupEventListeners() {
     displayTransactions();
     updateStats();
   });
+
+  // Distribution expense dialog
+  const closeDistributionBtn = document.getElementById(
+    "closeDistributionDialog",
+  );
+  if (closeDistributionBtn) {
+    closeDistributionBtn.addEventListener("click", () => {
+      document.getElementById("distributionExpenseDialog").close();
+    });
+  }
+
+  const distributionExpenseForm = document.getElementById(
+    "distributionExpenseForm",
+  );
+  if (distributionExpenseForm) {
+    distributionExpenseForm.addEventListener(
+      "submit",
+      submitDistributionWithExpenses,
+    );
+  }
+
+  const distributionExpenseDialog = document.getElementById(
+    "distributionExpenseDialog",
+  );
+  if (distributionExpenseDialog) {
+    distributionExpenseDialog.addEventListener("click", (e) => {
+      if (e.target === distributionExpenseDialog) {
+        distributionExpenseDialog.close();
+      }
+    });
+  }
 }
 
 function setupKeyboardShortcuts() {
@@ -360,6 +392,19 @@ async function submitTransaction(e) {
     return;
   }
 
+  // For distributions, show expense selection dialog
+  if (currentType === "distribution") {
+    pendingDistribution = {
+      amount,
+      owner_id,
+      property_id,
+      memo,
+      date,
+    };
+    await showDistributionExpenseDialog(owner_id);
+    return;
+  }
+
   isSubmitting = true;
 
   try {
@@ -499,6 +544,142 @@ async function submitBatch(e) {
   await loadTransactions();
   updateQuickBalances();
   isBatchSubmitting = false;
+}
+
+/**
+ * Show distribution expense selection dialog
+ * Loads unreimbursed expenses for the selected owner
+ */
+async function showDistributionExpenseDialog(owner_id) {
+  try {
+    // Load unreimbursed expenses for this owner
+    const response = await fetch(
+      `${apiUrl}/accounting/owners/${owner_id}/unreimbursed-expenses`,
+      {
+        credentials: "include",
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to load expenses");
+    }
+
+    const expenses = await response.json();
+
+    // Display expenses
+    const expensesList = document.getElementById("expensesList");
+    if (expenses.length === 0) {
+      expensesList.innerHTML =
+        '<div style="padding: 20px; text-align: center; color: #999;">No unreimbursed expenses found for this owner.</div>';
+    } else {
+      const html = expenses
+        .map(
+          (exp) => `
+        <div style="padding: 12px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 10px;">
+          <input 
+            type="checkbox" 
+            class="expense-checkbox" 
+            value="${exp.id}"
+            data-amount="${exp.amount}"
+          />
+          <div style="flex: 1;">
+            <div style="font-weight: 500; font-size: 13px;">${escapeHtml(exp.memo || "Unnamed")}</div>
+            <div style="font-size: 12px; color: #666;">
+              ${formatDateShort(exp.date)} • Vendor ID: ${exp.vendor_id || "—"}
+            </div>
+          </div>
+          <div style="font-weight: 600; min-width: 80px; text-align: right;">
+            $${parseFloat(exp.amount).toFixed(2)}
+          </div>
+        </div>
+      `,
+        )
+        .join("");
+
+      expensesList.innerHTML = html;
+    }
+
+    // Open dialog
+    document.getElementById("distributionExpenseDialog").showModal();
+  } catch (error) {
+    console.error("Error loading expenses:", error);
+    showMessage("Failed to load unreimbursed expenses", "error");
+  }
+}
+
+/**
+ * Submit distribution with selected expenses
+ */
+async function submitDistributionWithExpenses(e) {
+  e.preventDefault();
+
+  if (!pendingDistribution) {
+    showMessage("Error: Distribution data lost", "error");
+    return;
+  }
+
+  // Get selected expense IDs
+  const selectedCheckboxes = document.querySelectorAll(
+    "#expensesList .expense-checkbox:checked",
+  );
+  const expense_ids = Array.from(selectedCheckboxes).map((cb) =>
+    parseInt(cb.value),
+  );
+
+  // Close dialog
+  document.getElementById("distributionExpenseDialog").close();
+
+  isSubmitting = true;
+
+  try {
+    const payload = {
+      ...pendingDistribution,
+      expense_ids,
+    };
+
+    const response = await fetch(distributionsUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Failed to save distribution");
+    }
+
+    const result = await response.json();
+    lastTransaction = { type: "distribution", ...result };
+
+    const expenseMsg =
+      expense_ids.length > 0
+        ? ` and reconciled ${expense_ids.length} expense(s)`
+        : "";
+
+    // Show success message with link to view report
+    const reportUrl = `${apiUrl}/distributions/${result.id}/reconciliation-report`;
+    showMessageWithLink(
+      `✓ Distribution recorded${expenseMsg}`,
+      "View Report",
+      reportUrl,
+      "success",
+    );
+
+    document.getElementById("entryForm").reset();
+    setTodayDate();
+    await loadTransactions();
+    updateQuickBalances();
+
+    // Focus back to owner for next entry
+    document.getElementById("entryOwner").focus();
+    pendingDistribution = null;
+  } catch (error) {
+    console.error("Error:", error);
+    showMessage(error.message, "error");
+  } finally {
+    isSubmitting = false;
+  }
 }
 
 async function loadTransactions() {
@@ -773,6 +954,38 @@ function showMessage(text, type = "info") {
   setTimeout(() => {
     container.innerHTML = "";
   }, 4000);
+}
+
+function showMessageWithLink(text, linkText, linkUrl, type = "info") {
+  const container = document.getElementById("messageContainer");
+  const classes =
+    type === "error"
+      ? "error-message"
+      : type === "success"
+        ? "success-message"
+        : "info-message";
+
+  const html = `
+    <div class="${classes}" style="display: flex; justify-content: space-between; align-items: center;">
+      <span>${escapeHtml(text)}</span>
+      <a href="${escapeHtml(linkUrl)}" target="_blank" style="
+        color: inherit;
+        text-decoration: underline;
+        margin-left: 15px;
+        padding: 5px 10px;
+        background: rgba(255,255,255,0.2);
+        border-radius: 3px;
+        white-space: nowrap;
+      ">
+        ${escapeHtml(linkText)} ↗
+      </a>
+    </div>
+  `;
+  container.innerHTML = html;
+
+  setTimeout(() => {
+    container.innerHTML = "";
+  }, 6000);
 }
 
 function formatLocalDate(date) {

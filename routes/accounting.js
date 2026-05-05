@@ -692,10 +692,11 @@ router.post("/expenses/owner", async (req, res) => {
 /**
  * POST /distributions/owner - Record owner distribution
  * Debit: Owner Equity, Credit: Trust Cash
+ * @body expense_ids - (optional) Array of expense IDs to mark as reimbursed
  */
 router.post("/distributions/owner", async (req, res) => {
   try {
-    const { amount, owner_id, property_id, memo, date } = req.body;
+    const { amount, owner_id, property_id, memo, date, expense_ids } = req.body;
 
     let ownerEquityAccount = await accountRepository.getByName("Owner Equity");
     if (!ownerEquityAccount) {
@@ -720,6 +721,17 @@ router.post("/distributions/owner", async (req, res) => {
       owner_id,
       date,
     });
+
+    // Link distribution to expenses (mark them as reimbursed)
+    if (expense_ids && expense_ids.length > 0) {
+      try {
+        await ledgerService.linkDistributionToExpenses(entry.id, expense_ids);
+      } catch (error) {
+        console.error("Error linking distribution to expenses:", error);
+        // Don't fail the distribution, just log the error
+        console.warn("Distribution created but expenses could not be linked");
+      }
+    }
 
     res.status(201).json(entry);
   } catch (error) {
@@ -825,6 +837,49 @@ router.get("/owners/:owner_id/balance", async (req, res) => {
     res.json(balance);
   } catch (error) {
     console.error("Error calculating owner balance:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /owners/:owner_id/unreimbursed-expenses - Get unreimbursed expenses for an owner
+ */
+router.get("/owners/:owner_id/unreimbursed-expenses", async (req, res) => {
+  try {
+    const expenses = await ledgerService.getUnreimbursedExpenses(
+      req.params.owner_id,
+    );
+    res.json(expenses);
+  } catch (error) {
+    console.error("Error fetching unreimbursed expenses:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /distributions/:id/reconciliation-report - Get payment reconciliation report
+ * @query format - 'html' or 'json' (default: 'html')
+ */
+router.get("/distributions/:id/reconciliation-report", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const format = req.query.format || "html";
+    const distributionReportGenerator = require("../utils/distributionReportGenerator");
+
+    const reportData = await distributionReportGenerator.generateReport(
+      parseInt(id),
+    );
+
+    if (format === "json") {
+      res.json(reportData);
+    } else {
+      // Default to HTML
+      const html = distributionReportGenerator.generateHTML(reportData);
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(html);
+    }
+  } catch (error) {
+    console.error("Error generating reconciliation report:", error);
     res.status(500).json({ error: error.message });
   }
 });

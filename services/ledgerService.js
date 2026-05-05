@@ -212,17 +212,35 @@ const ledgerService = {
       }
     });
 
-    const balance =
-      rentCollected - expensesIncurred - managementFees - distributions;
+  /**
+   * Get unreimbursed owner expenses
+   * @param {number} owner_id
+   * @returns {Promise<array>} Array of unreimbursed expense entries
+   */
+  getUnreimbursedExpenses: async (owner_id) => {
+    return ledgerRepository.getUnreimbursedExpenses(owner_id);
+  },
 
-    return {
-      owner_id,
-      rentCollected,
-      expensesIncurred,
-      managementFees,
-      distributions,
-      balance,
-    };
+  /**
+   * Link a distribution to expenses (marks them as reimbursed)
+   * @param {number} distribution_id - Distribution entry ID
+   * @param {array} expense_ids - Array of expense IDs to link
+   * @returns {Promise<void>}
+   */
+  linkDistributionToExpenses: async (distribution_id, expense_ids) => {
+    return ledgerRepository.linkDistributionToExpenses(
+      distribution_id,
+      expense_ids,
+    );
+  },
+
+  /**
+   * Get expenses linked to a distribution
+   * @param {number} distribution_id
+   * @returns {Promise<array>} Array of expenses linked to this distribution
+   */
+  getDistributionExpenses: async (distribution_id) => {
+    return ledgerRepository.getDistributionExpenses(distribution_id);
   },
 };
 

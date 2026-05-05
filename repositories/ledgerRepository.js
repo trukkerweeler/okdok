@@ -123,6 +123,81 @@ const ledgerRepository = {
     const results = await db.query(sql, [id]);
     return results.affectedRows > 0;
   },
+
+  /**
+   * Get unreimbursed owner expenses for an owner
+   * @param {number} owner_id - Owner ID
+   * @returns {Promise<array>} Array of unreimbursed expense ledger entries
+   */
+  getUnreimbursedExpenses: async (owner_id) => {
+    const sql = `
+      SELECT le.* 
+      FROM ledger_entries le
+      WHERE le.owner_id = ?
+        AND le.reimbursement_status = 'unreimbursed'
+        AND le.memo LIKE '%expense%'
+      ORDER BY le.date ASC
+    `;
+    return db.query(sql, [owner_id]);
+  },
+
+  /**
+   * Link a distribution to specific expenses (mark them as reimbursed)
+   * @param {number} distribution_id - Distribution ledger entry ID
+   * @param {array} expense_ids - Array of expense ledger entry IDs to reimburse
+   * @returns {Promise<void>}
+   */
+  linkDistributionToExpenses: async (distribution_id, expense_ids) => {
+    if (!expense_ids || expense_ids.length === 0) {
+      return;
+    }
+
+    // Insert records into distribution_expenses
+    const values = expense_ids.map((id) => [distribution_id, id, 0]); // amount will be filled from expense
+
+    for (const expense_id of expense_ids) {
+      const sql = `
+        INSERT INTO distribution_expenses (distribution_id, expense_id, amount)
+        SELECT ?, ?, le.amount
+        FROM ledger_entries le
+        WHERE le.id = ?
+      `;
+      await db.query(sql, [distribution_id, expense_id, expense_id]);
+
+      // Mark expense as reimbursed
+      const updateSql =
+        "UPDATE ledger_entries SET reimbursement_status = 'reimbursed' WHERE id = ?";
+      await db.query(updateSql, [expense_id]);
+    }
+  },
+
+  /**
+   * Get expenses linked to a distribution
+   * @param {number} distribution_id - Distribution ledger entry ID
+   * @returns {Promise<array>} Array of linked expenses
+   */
+  getDistributionExpenses: async (distribution_id) => {
+    const sql = `
+      SELECT le.*, de.amount as reimbursed_amount
+      FROM distribution_expenses de
+      JOIN ledger_entries le ON de.expense_id = le.id
+      WHERE de.distribution_id = ?
+      ORDER BY le.date ASC
+    `;
+    return db.query(sql, [distribution_id]);
+  },
+
+  /**
+   * Update reimbursement status of a ledger entry
+   * @param {number} id - Ledger entry ID
+   * @param {string} status - 'unreimbursed' or 'reimbursed'
+   * @returns {Promise<void>}
+   */
+  updateReimbursementStatus: async (id, status) => {
+    const sql =
+      "UPDATE ledger_entries SET reimbursement_status = ? WHERE id = ?";
+    await db.query(sql, [status, id]);
+  },
 };
 
 module.exports = ledgerRepository;
