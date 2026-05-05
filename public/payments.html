@@ -54,6 +54,20 @@
             </div>
 
             <div class="col-md-6">
+              <label for="invoiceTenant" class="form-label"
+                >Tenant (from lease)</label
+              >
+              <input
+                type="text"
+                id="invoiceTenant"
+                name="tenant_display"
+                readonly
+                class="form-control"
+                placeholder="Select invoice to see tenant"
+              />
+            </div>
+
+            <div class="col-md-6">
               <label for="paymentAmount" class="form-label required"
                 >Amount Paid</label
               >
@@ -139,6 +153,23 @@
                 rows="3"
               ></textarea>
             </div>
+
+            <div class="col-12">
+              <label for="checkStubFile" class="form-label"
+                >Check Stub Scan (PDF or Image)</label
+              >
+              <input
+                type="file"
+                id="checkStubFile"
+                name="check_stub"
+                accept="application/pdf,image/jpeg,image/png,image/gif,image/tiff"
+                class="form-control"
+              />
+              <small class="text-muted"
+                >Optional: Upload a scan of the check stub for IRS compliance
+                (PDF or image, max 10MB)</small
+              >
+            </div>
           </div>
 
           <div class="dialog-actions d-flex gap-2 justify-content-end mt-3">
@@ -164,12 +195,12 @@
           <thead class="table-light">
             <tr>
               <th>Invoice #</th>
-              <th>Owner</th>
-              <th>Invoice Amount</th>
+              <th>Property</th>
+              <th>Tenant (Payer)</th>
+              <th>Type</th>
               <th>Amount Paid</th>
               <th>Payment Date</th>
-              <th>Method</th>
-              <th>Reference</th>
+              <th>Recipient</th>
               <th>Balance Due</th>
               <th>Actions</th>
             </tr>

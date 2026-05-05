@@ -361,7 +361,7 @@ async function showManageTenants(leaseId) {
           .map(
             (tenant) =>
               `<li>${escapeHtml(tenant.name)}${tenant.is_primary ? " ★ (Primary)" : ""}
-               <button class="btn btn-sm btn-danger ms-2" onclick="removeTenantFromLease(${leaseId}, ${tenant.id})">Remove</button>
+               ${!tenant.is_primary ? `<button class="btn btn-sm btn-info ms-2" onclick="makePrimaryTenant(${leaseId}, ${tenant.id})">Make Primary</button>` : ""}\n               <button class="btn btn-sm btn-danger ms-2" onclick="removeTenantFromLease(${leaseId}, ${tenant.id})">Remove</button>
              </li>`,
           )
           .join("") +
@@ -430,6 +430,28 @@ async function addTenantToLease() {
 /**
  * Remove tenant from lease
  */
+async function makePrimaryTenant(leaseId, tenantId) {
+  try {
+    const response = await fetch(
+      `/accounting/leases/${leaseId}/primary-tenant/${tenantId}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error("Error setting primary tenant");
+    }
+
+    await showManageTenants(leaseId);
+    alert("Primary tenant updated successfully");
+  } catch (error) {
+    console.error("Error setting primary tenant:", error);
+    alert("Error updating primary tenant. Please try again.");
+  }
+}
+
 async function removeTenantFromLease(leaseId, tenantId) {
   if (!confirm("Remove this tenant from the lease?")) {
     return;

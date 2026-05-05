@@ -3,7 +3,29 @@
  * REST API endpoints for property management accounting
  */
 const express = require("express");
+const multer = require("multer");
 const router = express.Router();
+
+// Multer configuration for file uploads (max 10MB per file)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    // Allow PDF and image files
+    const allowedMimes = [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/tiff",
+    ];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Invalid file type. Only PDF and image files are allowed."));
+    }
+  },
+});
 
 const ownerRepository = require("../repositories/ownerRepository");
 const propertyRepository = require("../repositories/propertyRepository");
@@ -12,6 +34,7 @@ const accountRepository = require("../repositories/accountRepository");
 const ledgerRepository = require("../repositories/ledgerRepository");
 const invoiceRepository = require("../repositories/invoiceRepository");
 const paymentRepository = require("../repositories/paymentRepository");
+const attachmentRepository = require("../repositories/attachmentRepository");
 const leaseRepository = require("../repositories/leaseRepository");
 const mileageRepository = require("../repositories/mileageRepository");
 const companySettingsRepository = require("../repositories/companySettingsRepository");
@@ -1228,6 +1251,7 @@ router.post("/payments", async (req, res) => {
       payment_method,
       reference_number,
       notes,
+      transaction_type,
     } = req.body;
 
     if (!invoice_id || !amount_paid) {
@@ -1249,6 +1273,7 @@ router.post("/payments", async (req, res) => {
       payment_method,
       reference_number,
       notes,
+      transaction_type: transaction_type || "tenant_to_manager",
     });
 
     // Post to ledger if amount paid matches or exceeds invoice amount
@@ -1312,6 +1337,7 @@ router.put("/payments/:id", async (req, res) => {
       payment_method,
       reference_number,
       notes,
+      transaction_type,
     } = req.body;
 
     const payment = await paymentRepository.update(req.params.id, {
@@ -1321,6 +1347,7 @@ router.put("/payments/:id", async (req, res) => {
       payment_method,
       reference_number,
       notes,
+      transaction_type: transaction_type || "tenant_to_manager",
     });
 
     res.json(payment);
@@ -1339,6 +1366,90 @@ router.delete("/payments/:id", async (req, res) => {
     res.status(204).send();
   } catch (error) {
     console.error("Error deleting payment:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /payments/:id/check-stub - Upload or update check stub for a payment
+ */
+router.put(
+  "/payments/:id/check-stub",
+  upload.single("check_stub"),
+  async (req, res) => {
+    try {
+      const paymentId = req.params.id;
+
+      // Verify payment exists
+      const payment = await paymentRepository.getById(paymentId);
+      if (!payment) {
+        return res.status(404).json({ error: "Payment not found" });
+      }
+
+      // Verify file was uploaded
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      // Delete existing check stub if present
+      await attachmentRepository.deleteByPaymentId(paymentId);
+
+      // Create new attachment
+      const attachment = await attachmentRepository.create({
+        payment_id: paymentId,
+        attachment_type: "check_stub",
+        file_blob: req.file.buffer,
+        filename: req.file.originalname,
+        mime_type: req.file.mimetype,
+        file_size: req.file.size,
+      });
+
+      res.json(attachment);
+    } catch (error) {
+      console.error("Error uploading check stub:", error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
+/**
+ * GET /payments/:id/check-stub - Download check stub for a payment
+ */
+router.get("/payments/:id/check-stub", async (req, res) => {
+  try {
+    const checkStub = await attachmentRepository.getCheckStubByPaymentId(
+      req.params.id,
+    );
+    if (!checkStub) {
+      return res.status(404).json({ error: "Check stub not found" });
+    }
+
+    res.setHeader("Content-Type", checkStub.mime_type);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${checkStub.filename}"`,
+    );
+    res.send(checkStub.file_blob);
+  } catch (error) {
+    console.error("Error downloading check stub:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /payments/:id/check-stub - Delete check stub for a payment
+ */
+router.delete("/payments/:id/check-stub", async (req, res) => {
+  try {
+    const payment = await paymentRepository.getById(req.params.id);
+    if (!payment) {
+      return res.status(404).json({ error: "Payment not found" });
+    }
+
+    await attachmentRepository.deleteByPaymentId(req.params.id);
+    res.json(payment);
+  } catch (error) {
+    console.error("Error deleting check stub:", error);
     res.status(500).json({ error: error.message });
   }
 });

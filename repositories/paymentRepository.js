@@ -11,13 +11,27 @@ const paymentRepository = {
   getAll: async () => {
     const sql = `
       SELECT 
-        p.*,
+        p.id,
+        p.invoice_id,
+        p.payment_date,
+        p.amount_paid,
+        p.payment_method,
+        p.reference_number,
+        p.notes,
+        p.transaction_type,
+        p.created_at,
+        p.updated_at,
         i.invoice_number,
         i.amount as invoice_amount,
+        i.description as invoice_type,
+        t.name as tenant_name,
         o.name as owner_name,
         pr.address as property_address
       FROM invoice_payments p
       LEFT JOIN invoices i ON p.invoice_id = i.id
+      LEFT JOIN leases l ON i.lease_id = l.id
+      LEFT JOIN lease_tenants lt ON l.id = lt.lease_id AND lt.is_primary = TRUE
+      LEFT JOIN tenants t ON lt.tenant_id = t.id
       LEFT JOIN owners o ON i.owner_id = o.id
       LEFT JOIN properties pr ON i.property_id = pr.id
       ORDER BY p.payment_date DESC, p.created_at DESC
@@ -31,12 +45,26 @@ const paymentRepository = {
   getByInvoiceId: async (invoice_id) => {
     const sql = `
       SELECT 
-        p.*,
+        p.id,
+        p.invoice_id,
+        p.payment_date,
+        p.amount_paid,
+        p.payment_method,
+        p.reference_number,
+        p.notes,
+        p.transaction_type,
+        p.created_at,
+        p.updated_at,
         i.invoice_number,
         i.amount as invoice_amount,
+        i.description as invoice_type,
+        t.name as tenant_name,
         o.name as owner_name
       FROM invoice_payments p
       LEFT JOIN invoices i ON p.invoice_id = i.id
+      LEFT JOIN leases l ON i.lease_id = l.id
+      LEFT JOIN lease_tenants lt ON l.id = lt.lease_id AND lt.is_primary = TRUE
+      LEFT JOIN tenants t ON lt.tenant_id = t.id
       LEFT JOIN owners o ON i.owner_id = o.id
       WHERE p.invoice_id = ?
       ORDER BY p.payment_date DESC
@@ -50,13 +78,29 @@ const paymentRepository = {
   getByOwnerId: async (owner_id) => {
     const sql = `
       SELECT 
-        p.*,
+        p.id,
+        p.invoice_id,
+        p.payment_date,
+        p.amount_paid,
+        p.payment_method,
+        p.reference_number,
+        p.notes,
+        p.transaction_type,
+        p.created_at,
+        p.updated_at,
         i.id as invoice_id,
         i.invoice_number,
         i.amount as invoice_amount,
+        i.description as invoice_type,
+        t.name as tenant_name,
+        o.name as owner_name,
         pr.address as property_address
       FROM invoice_payments p
       LEFT JOIN invoices i ON p.invoice_id = i.id
+      LEFT JOIN leases l ON i.lease_id = l.id
+      LEFT JOIN lease_tenants lt ON l.id = lt.lease_id AND lt.is_primary = TRUE
+      LEFT JOIN tenants t ON lt.tenant_id = t.id
+      LEFT JOIN owners o ON i.owner_id = o.id
       LEFT JOIN properties pr ON i.property_id = pr.id
       WHERE i.owner_id = ?
       ORDER BY p.payment_date DESC
@@ -70,13 +114,27 @@ const paymentRepository = {
   getById: async (id) => {
     const sql = `
       SELECT 
-        p.*,
+        p.id,
+        p.invoice_id,
+        p.payment_date,
+        p.amount_paid,
+        p.payment_method,
+        p.reference_number,
+        p.notes,
+        p.transaction_type,
+        p.created_at,
+        p.updated_at,
         i.invoice_number,
         i.amount as invoice_amount,
+        i.description as invoice_type,
+        t.name as tenant_name,
         o.name as owner_name,
         pr.address as property_address
       FROM invoice_payments p
       LEFT JOIN invoices i ON p.invoice_id = i.id
+      LEFT JOIN leases l ON i.lease_id = l.id
+      LEFT JOIN lease_tenants lt ON l.id = lt.lease_id AND lt.is_primary = TRUE
+      LEFT JOIN tenants t ON lt.tenant_id = t.id
       LEFT JOIN owners o ON i.owner_id = o.id
       LEFT JOIN properties pr ON i.property_id = pr.id
       WHERE p.id = ?
@@ -95,11 +153,12 @@ const paymentRepository = {
     payment_method,
     reference_number,
     notes,
+    transaction_type,
   }) => {
     const sql = `
       INSERT INTO invoice_payments 
-      (invoice_id, payment_date, amount_paid, payment_method, reference_number, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+      (invoice_id, payment_date, amount_paid, payment_method, reference_number, notes, transaction_type, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `;
     const results = await db.query(sql, [
       invoice_id,
@@ -108,6 +167,7 @@ const paymentRepository = {
       payment_method,
       reference_number,
       notes,
+      transaction_type || "tenant_to_manager",
     ]);
     return paymentRepository.getById(results.insertId);
   },
@@ -124,12 +184,13 @@ const paymentRepository = {
       payment_method,
       reference_number,
       notes,
+      transaction_type,
     },
   ) => {
     const sql = `
       UPDATE invoice_payments 
       SET invoice_id = ?, payment_date = ?, amount_paid = ?, 
-          payment_method = ?, reference_number = ?, notes = ?, updated_at = NOW()
+          payment_method = ?, reference_number = ?, notes = ?, transaction_type = ?, updated_at = NOW()
       WHERE id = ?
     `;
     await db.query(sql, [
@@ -139,6 +200,7 @@ const paymentRepository = {
       payment_method,
       reference_number,
       notes,
+      transaction_type || "tenant_to_manager",
       id,
     ]);
     return paymentRepository.getById(id);

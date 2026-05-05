@@ -12,6 +12,7 @@ const balanceUrl = `${apiUrl}/accounting/invoice-balance`;
 let user;
 let payments = [];
 let invoices = [];
+let paymentCheckStubs = {}; // Map of payment_id -> has_check_stub
 
 // Initialize handler function
 async function initializePayments() {
@@ -101,17 +102,25 @@ function populateInvoiceDropdown() {
 async function updateBalanceDisplay() {
   const invoiceSelect = document.getElementById("paymentInvoice");
   const balanceDisplay = document.getElementById("invoiceBalance");
+  const tenantDisplay = document.getElementById("invoiceTenant");
   const amountInput = document.getElementById("paymentAmount");
 
   if (!invoiceSelect || !balanceDisplay) return;
 
   const invoiceId = invoiceSelect.value;
   balanceDisplay.value = "";
+  if (tenantDisplay) tenantDisplay.value = "";
   balanceDisplay.classList.remove("balance-zero", "balance-pending");
   if (amountInput) amountInput.max = "";
 
   if (invoiceId) {
     try {
+      // Get the selected invoice to show tenant info
+      const selectedInvoice = invoices.find((inv) => inv.id == invoiceId);
+      if (tenantDisplay && selectedInvoice) {
+        tenantDisplay.value = selectedInvoice.tenant_name || "—";
+      }
+
       const response = await fetch(`${balanceUrl}/${invoiceId}`, {
         credentials: "include",
       });
@@ -160,8 +169,10 @@ async function savePayment(event) {
   event.preventDefault();
   const form = document.getElementById("addPaymentForm");
   const formData = new FormData(form);
+  const checkStubFile = formData.get("check_stub");
 
   try {
+    // First, save the payment record
     const dataJson = {
       invoice_id: parseInt(formData.get("invoice_id")),
       payment_date: formData.get("payment_date"),
@@ -189,6 +200,38 @@ async function savePayment(event) {
     const newPayment = await response.json();
     console.log("Payment saved:", newPayment);
 
+    // If a check stub file was provided, upload it
+    if (checkStubFile && checkStubFile.size > 0) {
+      const checkStubFormData = new FormData();
+      checkStubFormData.append("check_stub", checkStubFile);
+
+      try {
+        const uploadResponse = await fetch(
+          `${paymentsUrl}/${newPayment.id}/check-stub`,
+          {
+            method: "PUT",
+            body: checkStubFormData,
+            credentials: "include",
+          },
+        );
+
+        if (!uploadResponse.ok) {
+          const uploadError = await uploadResponse.json();
+          console.warn(
+            `Check stub upload warning: ${
+              uploadError.error || "Failed to upload check stub"
+            }`,
+          );
+          // Don't block payment creation if file upload fails
+        } else {
+          console.log("Check stub uploaded successfully");
+        }
+      } catch (uploadError) {
+        console.error("Error uploading check stub:", uploadError);
+        // Don't block payment creation if file upload fails
+      }
+    }
+
     // Close dialog and refresh list
     document.getElementById("addPaymentDialog").close();
     await loadPaymentsData();
@@ -210,6 +253,28 @@ async function loadPaymentsData() {
 
     payments = await response.json();
     console.debug("Payments loaded:", payments);
+    // if (payments.length > 0) {
+    //   console.log("First payment keys:", Object.keys(payments[0]));
+    //   console.log("First payment tenant_name:", payments[0].tenant_name);
+    //   console.log("First payment full object:", payments[0]);
+    // }
+
+    // Check which payments have check stubs
+    paymentCheckStubs = {};
+    for (const payment of payments) {
+      try {
+        const stubResponse = await fetch(
+          `${paymentsUrl}/${payment.id}/check-stub`,
+          {
+            credentials: "include",
+          },
+        );
+        paymentCheckStubs[payment.id] = stubResponse.ok;
+      } catch (error) {
+        paymentCheckStubs[payment.id] = false;
+      }
+    }
+
     displayPayments();
     updateSummary();
   } catch (error) {
@@ -243,30 +308,50 @@ function displayPayments() {
   tbody.innerHTML = payments
     .map((payment) => {
       const amountPaid = formatCurrency(payment.amount_paid);
-      const invoiceAmount = formatCurrency(payment.invoice_amount);
       const paymentDate = formatDate(payment.payment_date);
 
       const invoiceData = paymentsByInvoice[payment.invoice_id];
       const balance = parseFloat(payment.invoice_amount) - invoiceData.total;
       const balanceCurrency = formatCurrency(Math.max(0, balance));
 
+      const checkStubButton = paymentCheckStubs[payment.id]
+        ? `<button class="btn btn-sm btn-info download-check-stub-btn" data-id="${payment.id}" title="Download Check Stub">📄</button>`
+        : `<button class="btn btn-sm btn-secondary" disabled title="No check stub">—</button>`;
+
+      // Show recipient based on transaction type
+      const recipientDisplay =
+        payment.transaction_type === "manager_to_owner"
+          ? escapeHtml(payment.owner_name || "—")
+          : "—";
+
       return `
         <tr>
           <td><strong>${escapeHtml(payment.invoice_number)}</strong></td>
-          <td>${escapeHtml(payment.owner_name || "—")}</td>
-          <td class="text-end">${invoiceAmount}</td>
+          <td>${escapeHtml(payment.property_address || "—")}</td>
+          <td>${escapeHtml(payment.tenant_name || "—")}</td>
+          <td>${escapeHtml(payment.invoice_type || "—")}</td>
           <td class="text-end">${amountPaid}</td>
           <td>${paymentDate}</td>
-          <td>${escapeHtml(payment.payment_method || "—")}</td>
-          <td>${escapeHtml(payment.reference_number || "—")}</td>
+          <td>${recipientDisplay}</td>
           <td class="text-end">${balanceCurrency}</td>
           <td>
-            <button class="btn btn-sm btn-danger delete-btn" data-id="${payment.id}" title="Delete Payment">🗑️</button>
+            <div class="btn-group btn-group-sm" role="group">
+              ${checkStubButton}
+              <button class="btn btn-sm btn-danger delete-btn" data-id="${payment.id}" title="Delete Payment">🗑️</button>
+            </div>
           </td>
         </tr>
       `;
     })
     .join("");
+
+  // Add event listeners for download check stub buttons
+  tbody.querySelectorAll(".download-check-stub-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const paymentId = parseInt(e.target.dataset.id);
+      downloadCheckStub(paymentId);
+    });
+  });
 
   // Add event listeners for delete buttons
   tbody.querySelectorAll(".delete-btn").forEach((btn) => {
@@ -368,6 +453,40 @@ async function deletePayment(paymentId) {
     await loadPaymentsData();
   } catch (error) {
     console.error("Error deleting payment:", error);
+    alert(`Error: ${error.message}`);
+  }
+}
+
+async function downloadCheckStub(paymentId) {
+  try {
+    const response = await fetch(`${paymentsUrl}/${paymentId}/check-stub`, {
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to download check stub");
+    }
+
+    // Get the filename from Content-Disposition header
+    const contentDisposition = response.headers.get("Content-Disposition");
+    let filename = "check-stub";
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="(.+?)"/);
+      if (match) filename = match[1];
+    }
+
+    // Convert response to blob and download
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  } catch (error) {
+    console.error("Error downloading check stub:", error);
     alert(`Error: ${error.message}`);
   }
 }
