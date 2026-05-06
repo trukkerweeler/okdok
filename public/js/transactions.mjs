@@ -623,47 +623,6 @@ async function showDistributionExpenseDialog(owner_id) {
 }
 
 /**
- * Update live preview of net distribution amount
- */
-function updateDistributionPreview() {
-  if (!pendingDistribution) return;
-
-  const grossAmount = parseFloat(pendingDistribution.amount) || 0;
-  const checkboxes = document.querySelectorAll(
-    "#expensesList .expense-checkbox:checked",
-  );
-
-  // Sum expenses in cents to avoid floating point errors
-  const selectedTotalCents = Array.from(checkboxes).reduce((sum, cb) => {
-    return sum + Math.round(parseFloat(cb.dataset.amount) * 100);
-  }, 0);
-  const selectedTotal = selectedTotalCents / 100;
-
-  // Do math in cents to avoid floating point errors
-  const grossCents = Math.round(grossAmount * 100);
-  const netAmountCents = grossCents - selectedTotalCents;
-  const netAmount = netAmountCents / 100;
-
-  document.getElementById("previewGross").textContent = `$${grossAmount.toFixed(
-    2,
-  )}`;
-  document.getElementById("previewExpenses").textContent =
-    `-$${selectedTotal.toFixed(2)}`;
-  document.getElementById("previewNet").textContent = `$${Math.max(
-    0,
-    netAmount,
-  ).toFixed(2)}`;
-
-  // Warn if net is negative or zero
-  const netDisplay = document.getElementById("previewNet");
-  if (netAmount <= 0) {
-    netDisplay.style.color = "#dc3545";
-  } else {
-    netDisplay.style.color = "#007bff";
-  }
-}
-
-/**
  * Submit distribution with selected expenses
  */
 async function submitDistributionWithExpenses(e) {
@@ -880,12 +839,18 @@ function displayTransactions() {
         ? `<div class="log-report" data-dist-id="${t.distribution_id}" title="View distribution report" style="cursor:pointer;color:#0066cc;font-weight:bold;font-size:14px">📊</div>`
         : "";
 
+    // Add reimbursement status badge for expenses
+    const reimbursementBadge = type === "expense" 
+      ? t.reimbursement_status === "reimbursed"
+        ? `<span class="log-type-badge badge-reimbursed">✓ Reimbursed</span>`
+        : `<span class="log-type-badge badge-unreimbursed">Pending</span>`
+      : "";
+
     return `
       <div class="log-entry">
         <div class="log-date">${formatDateShort(t.date)}</div>
         <div class="log-amount">$${amount.toFixed(2)}</div>
-        <div class="log-description">${typeBadge}${reimbursementBadge} <span style="color:#999;font-size:11px">${propStr}</span> ${vendorStr} ${escapeHtml(t.memo || "")}</div>
-        ${reportButton}
+        <div class="log-description">${typeBadge} <span style="color:#999;font-size:11px">${propStr}</span> ${vendorStr} ${escapeHtml(t.memo || "")}</div>
         <div class="log-undo" data-id="${t.id}" title="Delete transaction">✕</div>
       </div>
     `;

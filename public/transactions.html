@@ -192,6 +192,18 @@
         color: #c3c;
       }
 
+      .badge-reimbursed {
+        background: #efe;
+        color: #3c3;
+        margin-left: 6px;
+      }
+
+      .badge-unreimbursed {
+        background: #ffe;
+        color: #c93;
+        margin-left: 6px;
+      }
+
       .log-undo {
         text-align: center;
         cursor: pointer;
@@ -617,6 +629,24 @@
             id="expensesList"
             style="max-height: 400px; overflow-y: auto"
           ></div>
+        </div>
+
+        <!-- Net Payout Preview -->
+        <div style="margin-top: 15px; padding: 12px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e0e0e0;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px;">
+            <div>
+              <div style="color: #666; font-size: 11px; text-transform: uppercase; font-weight: 600; margin-bottom: 4px;">Gross Amount</div>
+              <div style="font-family: 'Courier New', monospace; font-weight: 700; font-size: 14px;" id="previewGross">$0.00</div>
+            </div>
+            <div>
+              <div style="color: #666; font-size: 11px; text-transform: uppercase; font-weight: 600; margin-bottom: 4px;">Selected Expenses</div>
+              <div style="font-family: 'Courier New', monospace; font-weight: 700; font-size: 14px; color: #dc3545;" id="previewExpenses">-$0.00</div>
+            </div>
+          </div>
+          <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
+            <div style="color: #666; font-size: 11px; text-transform: uppercase; font-weight: 600; margin-bottom: 4px;">Net Distribution</div>
+            <div style="font-family: 'Courier New', monospace; font-weight: 700; font-size: 16px; color: #007bff;" id="previewNet">$0.00</div>
+          </div>
         </div>
 
         <div
