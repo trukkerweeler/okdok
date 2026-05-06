@@ -789,8 +789,12 @@ router.post("/distributions/owner", async (req, res) => {
       const distributionId = result.insertId;
 
       // Set the distribution_id to point to itself (marking this as a distribution)
-      const updateSql = "UPDATE ledger_entries SET distribution_id = ? WHERE id = ?";
-      await db.queryInTransaction(connection, updateSql, [distributionId, distributionId]);
+      const updateSql =
+        "UPDATE ledger_entries SET distribution_id = ? WHERE id = ?";
+      await db.queryInTransaction(connection, updateSql, [
+        distributionId,
+        distributionId,
+      ]);
 
       // Link selected expenses and mark as reimbursed within same transaction
       if (expense_ids && expense_ids.length > 0) {
