@@ -39,6 +39,7 @@ const leaseRepository = require("../repositories/leaseRepository");
 const mileageRepository = require("../repositories/mileageRepository");
 const companySettingsRepository = require("../repositories/companySettingsRepository");
 const ledgerService = require("../services/ledgerService");
+const db = require("../repositories/db");
 
 // ===================================================
 // OWNER ENDPOINTS
@@ -690,8 +691,9 @@ router.post("/expenses/owner", async (req, res) => {
 });
 
 /**
- * POST /distributions/owner - Record owner distribution
+ * POST /distributions/owner - Record owner distribution (atomic)
  * Debit: Owner Equity, Credit: Trust Cash
+ * Wraps expense validation, amount deduction, and transaction posting in single DB transaction
  * @body expense_ids - (optional) Array of expense IDs to mark as reimbursed
  */
 router.post("/distributions/owner", async (req, res) => {
@@ -712,26 +714,119 @@ router.post("/distributions/owner", async (req, res) => {
         .json({ error: "Trust Cash Account not found. Run seed script." });
     }
 
-    const entry = await ledgerService.postTransaction({
-      debit_account_id: ownerEquityAccount.id,
-      credit_account_id: trustAccount.id,
-      amount,
-      memo: memo || `Distribution to owner for property ${property_id}`,
-      property_id,
-      owner_id,
-      date,
-    });
+    // Wrap entire distribution operation in transaction
+    const entry = await db.transaction(async (connection) => {
+      // Fetch unreimbursed expenses for this owner within transaction
+      const unreimbursedExpenses = await db.queryInTransaction(
+        connection,
+        `
+        SELECT le.* 
+        FROM ledger_entries le
+        JOIN accounts debit_acc ON le.debit_account_id = debit_acc.id
+        WHERE le.owner_id = ?
+          AND debit_acc.name = 'Owner Expense'
+          AND (le.reimbursement_status = 'unreimbursed' OR le.reimbursement_status IS NULL)
+        ORDER BY le.date ASC
+      `,
+        [owner_id],
+      );
 
-    // Link distribution to expenses (mark them as reimbursed)
-    if (expense_ids && expense_ids.length > 0) {
-      try {
-        await ledgerService.linkDistributionToExpenses(entry.id, expense_ids);
-      } catch (error) {
-        console.error("Error linking distribution to expenses:", error);
-        // Don't fail the distribution, just log the error
-        console.warn("Distribution created but expenses could not be linked");
+      let distributionAmount = parseFloat(amount);
+
+      // Validate and deduct selected expenses
+      if (expense_ids && expense_ids.length > 0) {
+        const selectedExpenseIds = expense_ids.map((id) => parseInt(id));
+        const selectedExpenseMap = new Map(
+          unreimbursedExpenses.map((expense) => [
+            parseInt(expense.id),
+            expense,
+          ]),
+        );
+
+        const invalidExpenseIds = selectedExpenseIds.filter(
+          (id) => !selectedExpenseMap.has(id),
+        );
+        if (invalidExpenseIds.length > 0) {
+          throw new Error(
+            "One or more selected expenses are invalid or already reimbursed.",
+          );
+        }
+
+        const reimbursedTotalCents = selectedExpenseIds.reduce((sum, id) => {
+          const exp = selectedExpenseMap.get(id);
+          return sum + Math.round(parseFloat(exp.amount) * 100);
+        }, 0);
+
+        // Do math in cents to avoid floating point errors
+        const distributionCents = Math.round(distributionAmount * 100);
+        distributionAmount = (distributionCents - reimbursedTotalCents) / 100;
+
+        if (distributionAmount <= 0) {
+          throw new Error(
+            "Distribution amount must be greater than selected reimbursed expenses.",
+          );
+        }
       }
-    }
+
+      // Post the distribution transaction
+      const insertSql = `
+        INSERT INTO ledger_entries 
+        (date, debit_account_id, credit_account_id, amount, memo, property_id, owner_id, distribution_id, created_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      `;
+
+      const result = await db.queryInTransaction(connection, insertSql, [
+        date,
+        ownerEquityAccount.id,
+        trustAccount.id,
+        distributionAmount,
+        memo || `Distribution to owner for property ${property_id}`,
+        property_id,
+        owner_id,
+        null, // Will be set after insert
+      ]);
+
+      const distributionId = result.insertId;
+
+      // Set the distribution_id to point to itself (marking this as a distribution)
+      const updateSql = "UPDATE ledger_entries SET distribution_id = ? WHERE id = ?";
+      await db.queryInTransaction(connection, updateSql, [distributionId, distributionId]);
+
+      // Link selected expenses and mark as reimbursed within same transaction
+      if (expense_ids && expense_ids.length > 0) {
+        for (const expense_id of expense_ids) {
+          // Insert into distribution_expenses junction
+          const linkSql = `
+            INSERT INTO distribution_expenses (distribution_id, expense_id, amount)
+            SELECT ?, ?, le.amount
+            FROM ledger_entries le
+            WHERE le.id = ?
+          `;
+          await db.queryInTransaction(connection, linkSql, [
+            distributionId,
+            expense_id,
+            expense_id,
+          ]);
+
+          // Mark expense as reimbursed
+          const updateSql =
+            "UPDATE ledger_entries SET reimbursement_status = 'reimbursed' WHERE id = ?";
+          await db.queryInTransaction(connection, updateSql, [expense_id]);
+        }
+      }
+
+      // Return created entry
+      return {
+        id: distributionId,
+        date: date,
+        debit_account_id: ownerEquityAccount.id,
+        credit_account_id: trustAccount.id,
+        amount: distributionAmount,
+        memo: memo || `Distribution to owner for property ${property_id}`,
+        property_id,
+        owner_id,
+      };
+    });
 
     res.status(201).json(entry);
   } catch (error) {

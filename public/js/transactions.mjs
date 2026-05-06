@@ -136,7 +136,7 @@ function setupKeyboardShortcuts() {
 }
 
 // Column Resizing
-const DEFAULT_COLUMN_WIDTHS = ["80px", "80px", "1fr", "60px"];
+const DEFAULT_COLUMN_WIDTHS = ["80px", "80px", "1fr", "auto", "80px"];
 const COLUMNS_STORAGE_KEY = "transactionLogColumnWidths";
 
 function loadColumnWidths() {
@@ -310,9 +310,10 @@ function populateOwnerDropdown() {
     .join("");
   select.innerHTML = '<option value="">Select owner...</option>' + options;
 
-  // Set first owner by default
-  if (owners.length > 0) {
+  // Only set first owner by default if there's only one
+  if (owners.length === 1) {
     select.value = owners[0].id;
+    populatePropertyDropdown();
   }
 
   // Update property dropdown when owner changes
@@ -331,6 +332,11 @@ function populatePropertyDropdown() {
     .join("");
 
   select.innerHTML = '<option value="">All properties</option>' + options;
+
+  // Auto-select property if there's only one for this owner
+  if (ownerProps.length === 1) {
+    select.value = ownerProps[0].id;
+  }
 }
 
 function populatePropertyFilter() {
@@ -597,13 +603,63 @@ async function showDistributionExpenseDialog(owner_id) {
         .join("");
 
       expensesList.innerHTML = html;
+
+      // Add change listeners to all checkboxes for live preview
+      const checkboxes = document.querySelectorAll(".expense-checkbox");
+      checkboxes.forEach((checkbox) => {
+        checkbox.addEventListener("change", updateDistributionPreview);
+      });
     }
+
+    // Initialize preview with gross amount
+    updateDistributionPreview();
 
     // Open dialog
     document.getElementById("distributionExpenseDialog").showModal();
   } catch (error) {
     console.error("Error loading expenses:", error);
     showMessage("Failed to load unreimbursed expenses", "error");
+  }
+}
+
+/**
+ * Update live preview of net distribution amount
+ */
+function updateDistributionPreview() {
+  if (!pendingDistribution) return;
+
+  const grossAmount = parseFloat(pendingDistribution.amount) || 0;
+  const checkboxes = document.querySelectorAll(
+    "#expensesList .expense-checkbox:checked",
+  );
+
+  // Sum expenses in cents to avoid floating point errors
+  const selectedTotalCents = Array.from(checkboxes).reduce((sum, cb) => {
+    return sum + Math.round(parseFloat(cb.dataset.amount) * 100);
+  }, 0);
+  const selectedTotal = selectedTotalCents / 100;
+
+  // Do math in cents to avoid floating point errors
+  const grossCents = Math.round(grossAmount * 100);
+  const netAmountCents = grossCents - selectedTotalCents;
+  const netAmount = netAmountCents / 100;
+
+  document.getElementById("previewGross").textContent = `$${grossAmount.toFixed(
+    2,
+  )}`;
+  document.getElementById("previewExpenses").textContent =
+    `-$${selectedTotal.toFixed(2)}`;
+  document.getElementById("previewNet").textContent = `$${Math.max(
+    0,
+    netAmount,
+  ).toFixed(2)}`;
+
+  // Warn if net is negative or zero
+  const netDisplay = document.getElementById("previewNet");
+  if (netAmount <= 0) {
+    netDisplay.style.color = "#dc3545";
+  } else {
+    netDisplay.style.color = "#007bff";
   }
 }
 
@@ -658,7 +714,7 @@ async function submitDistributionWithExpenses(e) {
         : "";
 
     // Show success message with link to view report
-    const reportUrl = `${apiUrl}/distributions/${result.id}/reconciliation-report`;
+    const reportUrl = `${apiUrl}/accounting/distributions/${result.id}/reconciliation-report`;
     showMessageWithLink(
       `✓ Distribution recorded${expenseMsg}`,
       "View Report",
@@ -727,6 +783,7 @@ async function loadTransactions() {
     // Sort by date descending
     transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
     displayTransactions();
+    setupTransactionListeners();
     updateStats();
   } catch (error) {
     console.error("Error loading transactions:", error);
@@ -754,6 +811,37 @@ function displayTransactions() {
     return;
   }
 
+  // Debug: Log all transactions to see what we have
+  console.log("All transactions:", transactions);
+  console.log("Filtered transactions:", filtered);
+
+  // Debug: Check for distributions
+  const distributions = filtered.filter((t) => {
+    const memoLower = t.memo ? t.memo.toLowerCase() : "";
+    const descLower = t.description ? t.description.toLowerCase() : "";
+    return (
+      memoLower.includes("distribution") || descLower.includes("distribution")
+    );
+  });
+  console.log("Distribution transactions found:", distributions.length);
+  if (distributions.length > 0) {
+    console.log("First distribution:", distributions[0]);
+  }
+
+  // Debug: Log some memos to see what they look like
+  console.log(
+    "Sample memos:",
+    filtered
+      .slice(0, 5)
+      .map((t) => ({ id: t.id, memo: t.memo, description: t.description })),
+  );
+
+  // Debug: Log ALL fields of first transaction to see what we have to work with
+  if (filtered.length > 0) {
+    console.log("All fields in first transaction:", Object.keys(filtered[0]));
+    console.log("First transaction full object:", filtered[0]);
+  }
+
   // Create vendor name lookup
   const vendorMap = {};
   vendors.forEach((v) => {
@@ -762,18 +850,42 @@ function displayTransactions() {
 
   const html = filtered.map((t, idx) => {
     const type = getTransactionType(t);
-    const typeBadge = `<span class="log-type-badge badge-${type}">${type}</span>`;
+
+    // Debug: Log distribution transactions
+    if (
+      type === "distribution" ||
+      (t.memo && t.memo.toLowerCase().includes("distribution"))
+    ) {
+      console.log("Distribution transaction found:", t);
+    }
+
+    const typeBadge = `<span class="log-type-badge badge-${type}">${type.toUpperCase()}</span>`;
     const amount = parseFloat(t.amount) || 0;
     const propStr = t.property_id ? `#${t.property_id}` : "(no prop)";
     const vendorStr = t.vendor_id
       ? `<span style="color:#0066cc;font-weight:500">${escapeHtml(vendorMap[t.vendor_id] || "Unknown")}</span>`
       : "";
 
+    // Add reimbursement status badge for expenses
+    const reimbursementBadge =
+      type === "expense"
+        ? t.reimbursement_status === "reimbursed"
+          ? `<span class="log-type-badge badge-reimbursed">✓ Reimbursed</span>`
+          : `<span class="log-type-badge badge-unreimbursed">Pending</span>`
+        : "";
+
+    // Add report button for distributions
+    const reportButton =
+      type === "distribution"
+        ? `<div class="log-report" data-dist-id="${t.distribution_id}" title="View distribution report" style="cursor:pointer;color:#0066cc;font-weight:bold;font-size:14px">📊</div>`
+        : "";
+
     return `
       <div class="log-entry">
         <div class="log-date">${formatDateShort(t.date)}</div>
         <div class="log-amount">$${amount.toFixed(2)}</div>
-        <div class="log-description">${typeBadge} <span style="color:#999;font-size:11px">${propStr}</span> ${vendorStr} ${escapeHtml(t.memo || "")}</div>
+        <div class="log-description">${typeBadge}${reimbursementBadge} <span style="color:#999;font-size:11px">${propStr}</span> ${vendorStr} ${escapeHtml(t.memo || "")}</div>
+        ${reportButton}
         <div class="log-undo" data-id="${t.id}" title="Delete transaction">✕</div>
       </div>
     `;
@@ -781,18 +893,33 @@ function displayTransactions() {
 
   log.innerHTML = html.join("");
 
-  // Add undo listeners
-  document.querySelectorAll(".log-undo").forEach((el) => {
-    el.addEventListener("click", async (e) => {
-      const id = e.target.dataset.id;
-      if (confirm("Delete this transaction? This cannot be undone.")) {
-        await undoTransaction(id);
-      }
-    });
-  });
-
   // Apply saved column widths
   applyColumnWidths(loadColumnWidths());
+}
+
+function setupTransactionListeners() {
+  const log = document.getElementById("transactionLog");
+
+  // Use event delegation to avoid duplicate listeners
+  log.removeEventListener("click", handleTransactionClick);
+  log.addEventListener("click", handleTransactionClick);
+}
+
+async function handleTransactionClick(e) {
+  // Handle delete button
+  if (e.target.classList.contains("log-undo")) {
+    const id = e.target.dataset.id;
+    if (confirm("Delete this transaction? This cannot be undone.")) {
+      await undoTransaction(id);
+    }
+  }
+
+  // Handle report button
+  if (e.target.classList.contains("log-report")) {
+    const distId = e.target.dataset.distId;
+    const reportUrl = `${apiUrl}/accounting/distributions/${distId}/reconciliation-report`;
+    window.open(reportUrl, "_blank");
+  }
 }
 
 function updateStats() {
@@ -871,21 +998,38 @@ async function updateQuickBalances() {
 }
 
 function getTransactionType(txn) {
-  // Infer type from account names or memo
-  if (txn.memo) {
-    if (txn.memo.toLowerCase().includes("expense")) return "expense";
-    if (txn.memo.toLowerCase().includes("rent")) return "rent";
-    if (txn.memo.toLowerCase().includes("fee")) return "fee";
-    if (txn.memo.toLowerCase().includes("distribution")) return "distribution";
-  }
+  // Check if this is a distribution (has distribution_id)
+  if (txn.distribution_id) return "distribution";
+
+  // Infer type from account names (most reliable)
+  const debitAcct = txn.debit_account_name
+    ? txn.debit_account_name.toLowerCase()
+    : "";
+  const creditAcct = txn.credit_account_name
+    ? txn.credit_account_name.toLowerCase()
+    : "";
+
+  // Rent: Trust Cash (debit) + Rent Income (credit)
+  if (creditAcct.includes("rent")) return "rent";
+
+  // Fee: Owner Equity (debit) + Management Fee Income (credit)
+  if (creditAcct.includes("management fee") || creditAcct.includes("fee"))
+    return "fee";
+
+  // Expense: Owner Expense (debit) + Trust Cash (credit)
+  if (debitAcct.includes("expense")) return "expense";
+
+  // Fallback: try memo as last resort
+  const memoLower = txn.memo ? txn.memo.toLowerCase() : "";
+
+  if (memoLower.includes("expense")) return "expense";
+  if (memoLower.includes("rent")) return "rent";
+  if (memoLower.includes("fee")) return "fee";
+
   return "transaction";
 }
 
 async function undoTransaction(id) {
-  if (!confirm("Delete this transaction? This cannot be undone.")) {
-    return;
-  }
-
   try {
     const response = await fetch(`${apiUrl}/accounting/ledger/${id}`, {
       method: "DELETE",

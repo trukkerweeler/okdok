@@ -18,8 +18,17 @@ const ledgerRepository = {
    * Get ledger entries by owner
    */
   getByOwnerId: async (owner_id) => {
-    const sql =
-      "SELECT * FROM ledger_entries WHERE owner_id = ? ORDER BY date DESC, created_at DESC";
+    const sql = `
+      SELECT 
+        le.*,
+        da.name as debit_account_name,
+        ca.name as credit_account_name
+      FROM ledger_entries le
+      LEFT JOIN accounts da ON le.debit_account_id = da.id
+      LEFT JOIN accounts ca ON le.credit_account_id = ca.id
+      WHERE le.owner_id = ? 
+      ORDER BY le.date DESC, le.created_at DESC
+    `;
     return db.query(sql, [owner_id]);
   },
 
@@ -64,7 +73,7 @@ const ledgerRepository = {
    * Create a new ledger entry (double-entry transaction)
    */
   create: async ({
-    date = new Date(),
+    date = new Date().toISOString().split('T')[0],
     debit_account_id,
     credit_account_id,
     amount,
@@ -133,9 +142,10 @@ const ledgerRepository = {
     const sql = `
       SELECT le.* 
       FROM ledger_entries le
+      JOIN accounts debit_acc ON le.debit_account_id = debit_acc.id
       WHERE le.owner_id = ?
-        AND le.reimbursement_status = 'unreimbursed'
-        AND le.memo LIKE '%expense%'
+        AND debit_acc.name = 'Owner Expense'
+        AND (le.reimbursement_status = 'unreimbursed' OR le.reimbursement_status IS NULL)
       ORDER BY le.date ASC
     `;
     return db.query(sql, [owner_id]);

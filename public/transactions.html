@@ -132,7 +132,7 @@
 
       .log-entry {
         display: grid;
-        grid-template-columns: 80px 80px 1fr 60px;
+        grid-template-columns: 80px 80px 1fr auto 80px;
         gap: 12px;
         padding: 10px;
         border-bottom: 1px solid #f0f0f0;
@@ -197,6 +197,7 @@
         cursor: pointer;
         color: #999;
         font-size: 18px;
+        white-space: nowrap;
       }
 
       .log-undo:hover {
@@ -306,7 +307,7 @@
 
       .log-header {
         display: grid;
-        grid-template-columns: 80px 80px 1fr 60px;
+        grid-template-columns: 80px 80px 1fr auto 80px;
         gap: 12px;
         padding: 10px;
         background: #f8f9fa;
