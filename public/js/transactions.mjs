@@ -6,6 +6,7 @@ const apiUrl = await getApiUrl();
 const allOwnersUrl = `${apiUrl}/accounting/owners`;
 const allPropertiesUrl = `${apiUrl}/accounting/properties`;
 const vendorsUrl = `${apiUrl}/accounting/vendors`;
+const invoicesUrl = `${apiUrl}/accounting/invoices`;
 const expensesUrl = `${apiUrl}/accounting/expenses/owner`;
 const rentUrl = `${apiUrl}/accounting/rent/collect`;
 const feesUrl = `${apiUrl}/accounting/fees/management`;
@@ -16,6 +17,7 @@ let owners = [];
 let properties = [];
 let vendors = [];
 let transactions = [];
+let unpaidInvoices = [];
 let currentType = "expense";
 let lastTransaction = null;
 let isBatchMode = false;
@@ -56,8 +58,22 @@ function setupEventListeners() {
           .forEach((b) => b.classList.remove("active"));
         e.target.classList.add("active");
         currentType = newType;
+        updateFormForTransactionType();
       }
     });
+  });
+
+  // Owner and Property changes for invoice loading
+  document.getElementById("entryOwner").addEventListener("change", async (e) => {
+    if (currentType === "rent") {
+      await loadUnpaidInvoices();
+    }
+  });
+
+  document.getElementById("entryProperty").addEventListener("change", async (e) => {
+    if (currentType === "rent") {
+      await loadUnpaidInvoices();
+    }
   });
 
   // Form submission
@@ -240,6 +256,7 @@ function switchType(type) {
       btn.classList.add("active");
     }
   });
+  updateFormForTransactionType();
 }
 
 function toggleBatchMode() {
@@ -297,6 +314,7 @@ async function loadOwnersAndProperties() {
     populatePropertyDropdown();
     populatePropertyFilter();
     populateVendorDropdown();
+    updateFormForTransactionType();
   } catch (error) {
     console.error("Error loading owners/properties:", error);
     showMessage("Error loading owners/properties", "error");
@@ -367,6 +385,88 @@ function populateVendorDropdown() {
   });
 }
 
+/**
+ * Update form visibility based on transaction type
+ */
+function updateFormForTransactionType() {
+  const invoiceGroup = document.getElementById("invoiceSelectionGroup");
+  if (invoiceGroup) {
+    if (currentType === "rent") {
+      invoiceGroup.style.display = "block";
+      loadUnpaidInvoices();
+    } else {
+      invoiceGroup.style.display = "none";
+      // Clear invoice selection for non-rent types
+      document.getElementById("entryInvoice").value = "";
+    }
+  }
+}
+
+/**
+ * Load unpaid invoices for the selected owner and property
+ */
+async function loadUnpaidInvoices() {
+  try {
+    const owner_id = parseInt(document.getElementById("entryOwner").value);
+    const property_id = document.getElementById("entryProperty").value
+      ? parseInt(document.getElementById("entryProperty").value)
+      : null;
+
+    if (!owner_id) {
+      unpaidInvoices = [];
+      populateInvoiceDropdown();
+      return;
+    }
+
+    // Fetch all invoices and filter for unpaid ones
+    const response = await fetch(invoicesUrl, {
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      console.error("Failed to fetch invoices");
+      unpaidInvoices = [];
+      populateInvoiceDropdown();
+      return;
+    }
+
+    const allInvoices = await response.json();
+
+    // Filter for unpaid invoices matching owner and optional property
+    unpaidInvoices = allInvoices.filter((inv) => {
+      const statusMatch = inv.status !== "paid" && inv.status !== "cancelled";
+      const ownerMatch = inv.owner_id === owner_id;
+      const propertyMatch = property_id ? inv.property_id === property_id : true;
+      return statusMatch && ownerMatch && propertyMatch;
+    });
+
+    populateInvoiceDropdown();
+  } catch (error) {
+    console.error("Error loading invoices:", error);
+    unpaidInvoices = [];
+    populateInvoiceDropdown();
+  }
+}
+
+/**
+ * Populate the invoice dropdown with unpaid invoices
+ */
+function populateInvoiceDropdown() {
+  const select = document.getElementById("entryInvoice");
+  if (!select) return;
+
+  select.innerHTML = '<option value="">-- No invoice --</option>';
+
+  unpaidInvoices.forEach((inv) => {
+    const option = document.createElement("option");
+    option.value = inv.id;
+    const amount = parseFloat(inv.amount).toFixed(2);
+    const dueDate = inv.due_date ? new Date(inv.due_date).toLocaleDateString() : "No due date";
+    option.textContent = `Invoice #${inv.id} - $${amount} (Due: ${dueDate})`;
+    select.appendChild(option);
+  });
+}
+
 async function submitTransaction(e) {
   e.preventDefault();
 
@@ -385,6 +485,9 @@ async function submitTransaction(e) {
   const date = document.getElementById("entryDate").value;
   const vendor_id = document.getElementById("entryVendor").value
     ? parseInt(document.getElementById("entryVendor").value)
+    : null;
+  const invoice_id = document.getElementById("entryInvoice").value
+    ? parseInt(document.getElementById("entryInvoice").value)
     : null;
 
   if (!owner_id || !amount) {
@@ -452,11 +555,40 @@ async function submitTransaction(e) {
     const result = await response.json();
     lastTransaction = { type: currentType, ...result };
 
-    showMessage(`✓ ${currentType.toUpperCase()} recorded`, "success");
+    // If a rent transaction with an invoice was submitted, mark the invoice as paid
+    if (currentType === "rent" && invoice_id) {
+      try {
+        const invoiceUpdateResponse = await fetch(
+          `${invoicesUrl}/${invoice_id}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "paid" }),
+            credentials: "include",
+          },
+        );
+
+        if (invoiceUpdateResponse.ok) {
+          showMessage(`✓ RENT recorded & Invoice #${invoice_id} marked as paid`, "success");
+        } else {
+          console.error("Failed to update invoice status");
+          showMessage(`✓ RENT recorded (but invoice update failed)`, "warning");
+        }
+      } catch (invoiceError) {
+        console.error("Error updating invoice:", invoiceError);
+        showMessage(`✓ RENT recorded (but invoice update failed)`, "warning");
+      }
+    } else {
+      showMessage(`✓ ${currentType.toUpperCase()} recorded`, "success");
+    }
+
     document.getElementById("entryForm").reset();
     setTodayDate();
     await loadTransactions();
     updateQuickBalances();
+    if (currentType === "rent") {
+      await loadUnpaidInvoices();
+    }
 
     // Focus back to owner for next entry
     document.getElementById("entryOwner").focus();
@@ -550,6 +682,31 @@ async function submitBatch(e) {
   await loadTransactions();
   updateQuickBalances();
   isBatchSubmitting = false;
+}
+
+/**
+ * Update distribution preview with selected expenses
+ */
+function updateDistributionPreview() {
+  if (!pendingDistribution) return;
+
+  const gross = parseFloat(pendingDistribution.amount) || 0;
+  const selectedCheckboxes = document.querySelectorAll(
+    "#expensesList .expense-checkbox:checked",
+  );
+  const selectedTotal = Array.from(selectedCheckboxes).reduce((sum, cb) => {
+    return sum + (parseFloat(cb.dataset.amount) || 0);
+  }, 0);
+  const net = gross - selectedTotal;
+
+  // Update preview elements
+  const previewGross = document.getElementById("previewGross");
+  const previewExpenses = document.getElementById("previewExpenses");
+  const previewNet = document.getElementById("previewNet");
+
+  if (previewGross) previewGross.textContent = `$${gross.toFixed(2)}`;
+  if (previewExpenses) previewExpenses.textContent = `-$${selectedTotal.toFixed(2)}`;
+  if (previewNet) previewNet.textContent = `$${net.toFixed(2)}`;
 }
 
 /**
@@ -839,19 +996,15 @@ function displayTransactions() {
         ? `<div class="log-report" data-dist-id="${t.distribution_id}" title="View distribution report" style="cursor:pointer;color:#0066cc;font-weight:bold;font-size:14px">📊</div>`
         : "";
 
-    // Add reimbursement status badge for expenses
-    const reimbursementBadge = type === "expense" 
-      ? t.reimbursement_status === "reimbursed"
-        ? `<span class="log-type-badge badge-reimbursed">✓ Reimbursed</span>`
-        : `<span class="log-type-badge badge-unreimbursed">Pending</span>`
-      : "";
-
     return `
       <div class="log-entry">
         <div class="log-date">${formatDateShort(t.date)}</div>
         <div class="log-amount">$${amount.toFixed(2)}</div>
-        <div class="log-description">${typeBadge} <span style="color:#999;font-size:11px">${propStr}</span> ${vendorStr} ${escapeHtml(t.memo || "")}</div>
-        <div class="log-undo" data-id="${t.id}" title="Delete transaction">✕</div>
+        <div class="log-description">${typeBadge} ${reimbursementBadge} <span style="color:#999;font-size:11px">${propStr}</span> ${vendorStr} ${escapeHtml(t.memo || "")}</div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          ${reportButton}
+          <div class="log-undo" data-id="${t.id}" title="Delete transaction">✕</div>
+        </div>
       </div>
     `;
   });
