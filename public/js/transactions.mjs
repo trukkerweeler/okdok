@@ -64,17 +64,21 @@ function setupEventListeners() {
   });
 
   // Owner and Property changes for invoice loading
-  document.getElementById("entryOwner").addEventListener("change", async (e) => {
-    if (currentType === "rent") {
-      await loadUnpaidInvoices();
-    }
-  });
+  document
+    .getElementById("entryOwner")
+    .addEventListener("change", async (e) => {
+      if (currentType === "rent") {
+        await loadUnpaidInvoices();
+      }
+    });
 
-  document.getElementById("entryProperty").addEventListener("change", async (e) => {
-    if (currentType === "rent") {
-      await loadUnpaidInvoices();
-    }
-  });
+  document
+    .getElementById("entryProperty")
+    .addEventListener("change", async (e) => {
+      if (currentType === "rent") {
+        await loadUnpaidInvoices();
+      }
+    });
 
   // Form submission
   document
@@ -149,6 +153,15 @@ function setupKeyboardShortcuts() {
       document.getElementById("entryForm").dispatchEvent(new Event("submit"));
     }
   });
+
+  // Prevent scroll wheel from changing the amount field
+  document.getElementById("entryAmount").addEventListener(
+    "wheel",
+    (e) => {
+      e.target.blur();
+    },
+    { passive: true },
+  );
 }
 
 // Column Resizing
@@ -436,7 +449,9 @@ async function loadUnpaidInvoices() {
     unpaidInvoices = allInvoices.filter((inv) => {
       const statusMatch = inv.status !== "paid" && inv.status !== "cancelled";
       const ownerMatch = inv.owner_id === owner_id;
-      const propertyMatch = property_id ? inv.property_id === property_id : true;
+      const propertyMatch = property_id
+        ? inv.property_id === property_id
+        : true;
       return statusMatch && ownerMatch && propertyMatch;
     });
 
@@ -460,10 +475,24 @@ function populateInvoiceDropdown() {
   unpaidInvoices.forEach((inv) => {
     const option = document.createElement("option");
     option.value = inv.id;
+    option.dataset.amount = inv.amount;
     const amount = parseFloat(inv.amount).toFixed(2);
-    const dueDate = inv.due_date ? new Date(inv.due_date).toLocaleDateString() : "No due date";
+    const dueDate = inv.due_date
+      ? new Date(inv.due_date).toLocaleDateString()
+      : "No due date";
     option.textContent = `Invoice #${inv.id} - $${amount} (Due: ${dueDate})`;
     select.appendChild(option);
+  });
+
+  // Auto-fill amount when an invoice is selected
+  select.addEventListener("change", () => {
+    const selected = select.options[select.selectedIndex];
+    const amountField = document.getElementById("entryAmount");
+    if (selected && selected.dataset.amount) {
+      amountField.value = parseFloat(selected.dataset.amount).toFixed(2);
+    } else if (selected && !selected.dataset.amount) {
+      amountField.value = "";
+    }
   });
 }
 
@@ -524,6 +553,11 @@ async function submitTransaction(e) {
       payload.vendor_id = vendor_id;
     }
 
+    // Include invoice_id for rent — backend marks it paid atomically
+    if (currentType === "rent" && invoice_id) {
+      payload.invoice_id = invoice_id;
+    }
+
     let url;
     switch (currentType) {
       case "expense":
@@ -555,29 +589,11 @@ async function submitTransaction(e) {
     const result = await response.json();
     lastTransaction = { type: currentType, ...result };
 
-    // If a rent transaction with an invoice was submitted, mark the invoice as paid
     if (currentType === "rent" && invoice_id) {
-      try {
-        const invoiceUpdateResponse = await fetch(
-          `${invoicesUrl}/${invoice_id}`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: "paid" }),
-            credentials: "include",
-          },
-        );
-
-        if (invoiceUpdateResponse.ok) {
-          showMessage(`✓ RENT recorded & Invoice #${invoice_id} marked as paid`, "success");
-        } else {
-          console.error("Failed to update invoice status");
-          showMessage(`✓ RENT recorded (but invoice update failed)`, "warning");
-        }
-      } catch (invoiceError) {
-        console.error("Error updating invoice:", invoiceError);
-        showMessage(`✓ RENT recorded (but invoice update failed)`, "warning");
-      }
+      showMessage(
+        `✓ RENT recorded & Invoice #${invoice_id} marked as paid`,
+        "success",
+      );
     } else {
       showMessage(`✓ ${currentType.toUpperCase()} recorded`, "success");
     }
@@ -685,57 +701,102 @@ async function submitBatch(e) {
 }
 
 /**
- * Update distribution preview with selected expenses
+ * Update distribution preview with selected expenses and fees
  */
 function updateDistributionPreview() {
   if (!pendingDistribution) return;
 
   const gross = parseFloat(pendingDistribution.amount) || 0;
-  const selectedCheckboxes = document.querySelectorAll(
+  const selectedExpenseCheckboxes = document.querySelectorAll(
     "#expensesList .expense-checkbox:checked",
   );
-  const selectedTotal = Array.from(selectedCheckboxes).reduce((sum, cb) => {
-    return sum + (parseFloat(cb.dataset.amount) || 0);
-  }, 0);
-  const net = gross - selectedTotal;
+  const selectedFeeCheckboxes = document.querySelectorAll(
+    "#feesList .fee-checkbox:checked",
+  );
+  const selectedExpenseTotal = Array.from(selectedExpenseCheckboxes).reduce(
+    (sum, cb) => sum + (parseFloat(cb.dataset.amount) || 0),
+    0,
+  );
+  const selectedFeeTotal = Array.from(selectedFeeCheckboxes).reduce(
+    (sum, cb) => sum + (parseFloat(cb.dataset.amount) || 0),
+    0,
+  );
+  const net = gross - selectedExpenseTotal - selectedFeeTotal;
 
-  // Update preview elements
   const previewGross = document.getElementById("previewGross");
   const previewExpenses = document.getElementById("previewExpenses");
+  const previewFees = document.getElementById("previewFees");
   const previewNet = document.getElementById("previewNet");
 
   if (previewGross) previewGross.textContent = `$${gross.toFixed(2)}`;
-  if (previewExpenses) previewExpenses.textContent = `-$${selectedTotal.toFixed(2)}`;
+  if (previewFees) previewFees.textContent = `-$${selectedFeeTotal.toFixed(2)}`;
+  if (previewExpenses)
+    previewExpenses.textContent = `-$${selectedExpenseTotal.toFixed(2)}`;
   if (previewNet) previewNet.textContent = `$${net.toFixed(2)}`;
 }
 
 /**
  * Show distribution expense selection dialog
- * Loads unreimbursed expenses for the selected owner
+ * Loads unreimbursed expenses and uncollected fees for the selected owner
  */
 async function showDistributionExpenseDialog(owner_id) {
   try {
-    // Load unreimbursed expenses for this owner
-    const response = await fetch(
-      `${apiUrl}/accounting/owners/${owner_id}/unreimbursed-expenses`,
-      {
+    // Load unreimbursed expenses and uncollected fees in parallel
+    const [expenseResponse, feeResponse] = await Promise.all([
+      fetch(`${apiUrl}/accounting/owners/${owner_id}/unreimbursed-expenses`, {
         credentials: "include",
-      },
-    );
+      }),
+      fetch(`${apiUrl}/accounting/owners/${owner_id}/unreimbursed-fees`, {
+        credentials: "include",
+      }),
+    ]);
 
-    if (!response.ok) {
-      throw new Error("Failed to load expenses");
+    if (!expenseResponse.ok) throw new Error("Failed to load expenses");
+    if (!feeResponse.ok) throw new Error("Failed to load fees");
+
+    const expenses = await expenseResponse.json();
+    const fees = await feeResponse.json();
+
+    // Display fees
+    const feesList = document.getElementById("feesList");
+    if (fees.length === 0) {
+      feesList.innerHTML =
+        '<div style="padding: 12px; text-align: center; color: #999; font-size: 12px;">No uncollected fees.</div>';
+    } else {
+      feesList.innerHTML = fees
+        .map(
+          (fee) => `
+        <div style="padding: 12px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 10px;">
+          <input
+            type="checkbox"
+            class="fee-checkbox"
+            value="${fee.id}"
+            data-amount="${fee.amount}"
+          />
+          <div style="flex: 1;">
+            <div style="font-weight: 500; font-size: 13px;">${escapeHtml(fee.memo || "Management Fee")}</div>
+            <div style="font-size: 12px; color: #666;">${formatDateShort(fee.date)}</div>
+          </div>
+          <div style="font-weight: 600; min-width: 80px; text-align: right;">
+            $${parseFloat(fee.amount).toFixed(2)}
+          </div>
+        </div>
+      `,
+        )
+        .join("");
+
+      document.querySelectorAll(".fee-checkbox").forEach((cb) => {
+        cb.addEventListener("change", updateDistributionPreview);
+      });
     }
-
-    const expenses = await response.json();
 
     // Display expenses
     const expensesList = document.getElementById("expensesList");
     if (expenses.length === 0) {
       expensesList.innerHTML =
-        '<div style="padding: 20px; text-align: center; color: #999;">No unreimbursed expenses found for this owner.</div>';
+        '<div style="padding: 12px; text-align: center; color: #999; font-size: 12px;">No unreimbursed expenses.</div>';
     } else {
-      const html = expenses
+      expensesList.innerHTML = expenses
         .map(
           (exp) => `
         <div style="padding: 12px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 10px;">
@@ -759,11 +820,7 @@ async function showDistributionExpenseDialog(owner_id) {
         )
         .join("");
 
-      expensesList.innerHTML = html;
-
-      // Add change listeners to all checkboxes for live preview
-      const checkboxes = document.querySelectorAll(".expense-checkbox");
-      checkboxes.forEach((checkbox) => {
+      document.querySelectorAll(".expense-checkbox").forEach((checkbox) => {
         checkbox.addEventListener("change", updateDistributionPreview);
       });
     }
@@ -774,8 +831,8 @@ async function showDistributionExpenseDialog(owner_id) {
     // Open dialog
     document.getElementById("distributionExpenseDialog").showModal();
   } catch (error) {
-    console.error("Error loading expenses:", error);
-    showMessage("Failed to load unreimbursed expenses", "error");
+    console.error("Error loading expenses/fees:", error);
+    showMessage("Failed to load unreimbursed expenses and fees", "error");
   }
 }
 
@@ -791,10 +848,18 @@ async function submitDistributionWithExpenses(e) {
   }
 
   // Get selected expense IDs
-  const selectedCheckboxes = document.querySelectorAll(
+  const selectedExpenseCheckboxes = document.querySelectorAll(
     "#expensesList .expense-checkbox:checked",
   );
-  const expense_ids = Array.from(selectedCheckboxes).map((cb) =>
+  const expense_ids = Array.from(selectedExpenseCheckboxes).map((cb) =>
+    parseInt(cb.value),
+  );
+
+  // Get selected fee IDs
+  const selectedFeeCheckboxes = document.querySelectorAll(
+    "#feesList .fee-checkbox:checked",
+  );
+  const fee_ids = Array.from(selectedFeeCheckboxes).map((cb) =>
     parseInt(cb.value),
   );
 
@@ -807,6 +872,7 @@ async function submitDistributionWithExpenses(e) {
     const payload = {
       ...pendingDistribution,
       expense_ids,
+      fee_ids,
     };
 
     const response = await fetch(distributionsUrl, {
@@ -824,15 +890,16 @@ async function submitDistributionWithExpenses(e) {
     const result = await response.json();
     lastTransaction = { type: "distribution", ...result };
 
-    const expenseMsg =
-      expense_ids.length > 0
-        ? ` and reconciled ${expense_ids.length} expense(s)`
-        : "";
+    const parts = [];
+    if (fee_ids.length > 0) parts.push(`${fee_ids.length} fee(s)`);
+    if (expense_ids.length > 0) parts.push(`${expense_ids.length} expense(s)`);
+    const deductionMsg =
+      parts.length > 0 ? ` and deducted ${parts.join(" and ")}` : "";
 
     // Show success message with link to view report
     const reportUrl = `${apiUrl}/accounting/distributions/${result.id}/reconciliation-report`;
     showMessageWithLink(
-      `✓ Distribution recorded${expenseMsg}`,
+      `✓ Distribution recorded${deductionMsg}`,
       "View Report",
       reportUrl,
       "success",
@@ -975,7 +1042,7 @@ function displayTransactions() {
       console.log("Distribution transaction found:", t);
     }
 
-    const typeBadge = `<span class="log-type-badge badge-${type}">${type.toUpperCase()}</span>`;
+    const typeBadge = `<span class="log-type-badge badge-${type}" title="Transaction #${t.id}">${type.toUpperCase()}</span>`;
     const amount = parseFloat(t.amount) || 0;
     const propStr = t.property_id ? `#${t.property_id}` : "(no prop)";
     const vendorStr = t.vendor_id
@@ -990,6 +1057,18 @@ function displayTransactions() {
           : `<span class="log-type-badge badge-unreimbursed">Pending</span>`
         : "";
 
+    // Add receipt indicator for expenses
+    const hasReceipts =
+      type === "expense" && t.receipt_count && t.receipt_count > 0;
+    const receiptClass = hasReceipts ? "receipt-attached" : "receipt-empty";
+    const receiptBadge = hasReceipts
+      ? `<span class="receipt-badge">${t.receipt_count}</span>`
+      : "";
+    const receiptIndicator =
+      type === "expense"
+        ? `<div class="log-action log-receipt ${receiptClass}" data-id="${t.id}" data-receipt-count="${t.receipt_count || 0}" title="${hasReceipts ? "View Receipt" : "Attach Receipt"}">📎${receiptBadge}</div>`
+        : "";
+
     // Add report button for distributions
     const reportButton =
       type === "distribution"
@@ -1002,6 +1081,7 @@ function displayTransactions() {
         <div class="log-amount">$${amount.toFixed(2)}</div>
         <div class="log-description">${typeBadge} ${reimbursementBadge} <span style="color:#999;font-size:11px">${propStr}</span> ${vendorStr} ${escapeHtml(t.memo || "")}</div>
         <div style="display: flex; gap: 8px; align-items: center;">
+          ${receiptIndicator}
           ${reportButton}
           <div class="log-undo" data-id="${t.id}" title="Delete transaction">✕</div>
         </div>
@@ -1023,7 +1103,30 @@ function setupTransactionListeners() {
   log.addEventListener("click", handleTransactionClick);
 }
 
+let currentTransactionIdForReceipt = null;
+
 async function handleTransactionClick(e) {
+  // Handle receipt click - paperclip or badge
+  if (
+    e.target.classList.contains("log-receipt") ||
+    e.target.classList.contains("receipt-badge")
+  ) {
+    e.stopPropagation();
+    const receiptElement =
+      e.currentTarget.closest(".log-receipt") ||
+      e.target.closest(".log-receipt");
+    if (receiptElement) {
+      const transactionId = receiptElement.dataset.id;
+      if (e.target.classList.contains("receipt-badge")) {
+        // Badge clicked = download
+        await downloadTransactionReceipt(transactionId);
+      } else {
+        // Paperclip clicked = upload
+        await attachTransactionReceipt(transactionId);
+      }
+    }
+  }
+
   // Handle delete button
   if (e.target.classList.contains("log-undo")) {
     const id = e.target.dataset.id;
@@ -1037,6 +1140,83 @@ async function handleTransactionClick(e) {
     const distId = e.target.dataset.distId;
     const reportUrl = `${apiUrl}/accounting/distributions/${distId}/reconciliation-report`;
     window.open(reportUrl, "_blank");
+  }
+}
+
+async function attachTransactionReceipt(transactionId) {
+  // Open file input dialog
+  currentTransactionIdForReceipt = transactionId;
+  if (!document.getElementById("transactionReceiptFileInput")) {
+    // Create hidden file input if it doesn't exist
+    const input = document.createElement("input");
+    input.type = "file";
+    input.id = "transactionReceiptFileInput";
+    input.accept = ".pdf,.jpg,.jpeg,.png,.gif,.tiff";
+    input.style.display = "none";
+    document.body.appendChild(input);
+    input.addEventListener("change", uploadTransactionReceipt);
+  }
+  document.getElementById("transactionReceiptFileInput").click();
+}
+
+async function uploadTransactionReceipt(e) {
+  try {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch(
+      `${apiUrl}/accounting/ledger/${currentTransactionIdForReceipt}/receipts`,
+      {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to upload receipt");
+    }
+
+    showMessage("✓ Receipt uploaded successfully", "success");
+    await loadTransactions();
+    e.target.value = ""; // Reset file input
+  } catch (error) {
+    console.error("Error uploading receipt:", error);
+    showMessage("Error uploading receipt", "error");
+  }
+}
+
+async function downloadTransactionReceipt(transactionId) {
+  try {
+    const response = await fetch(
+      `${apiUrl}/accounting/ledger/${transactionId}/receipts`,
+      {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch receipts");
+    }
+
+    const receipts = await response.json();
+    if (receipts.length > 0) {
+      // Download the most recent receipt
+      const receipt = receipts[0];
+      const downloadUrl = `${apiUrl}/accounting/receipts/${receipt.id}`;
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = receipt.filename;
+      link.click();
+    }
+  } catch (error) {
+    console.error("Error downloading receipt:", error);
+    showMessage("Error downloading receipt", "error");
   }
 }
 
@@ -1064,10 +1244,26 @@ function updateStats() {
     0,
   );
 
+  // Calculate unreimbursed owner expenses
+  const unreimbursed = filtered.filter(
+    (t) =>
+      t.debit_account_name?.includes("Owner Expense") &&
+      t.reimbursement_status !== "reimbursed",
+  );
+  const unreimbursedCount = unreimbursed.length;
+  const unreimbursedBalance = unreimbursed.reduce(
+    (sum, t) => sum + parseFloat(t.amount || 0),
+    0,
+  );
+
   document.getElementById("statsToday").textContent = todayTxns.length;
   document.getElementById("statsMonth").textContent = monthTxns.length;
   document.getElementById("statsTotal").textContent =
     `$${totalVolume.toFixed(2)}`;
+  document.getElementById("statsUnreimbursedCount").textContent =
+    unreimbursedCount;
+  document.getElementById("statsUnreimbursedBalance").textContent =
+    `$${unreimbursedBalance.toFixed(2)}`;
 }
 
 async function updateQuickBalances() {

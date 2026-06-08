@@ -125,6 +125,37 @@ const attachmentRepository = {
   },
 
   /**
+   * Get deposit receipt for a payment
+   */
+  getDepositReceiptByPaymentId: async (payment_id) => {
+    const sql = `
+      SELECT 
+        id,
+        payment_id,
+        file_blob,
+        filename,
+        mime_type,
+        file_size,
+        created_at
+      FROM payment_attachments
+      WHERE payment_id = ? AND attachment_type = 'deposit_receipt'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    const results = await db.query(sql, [payment_id]);
+    return results[0] || null;
+  },
+
+  /**
+   * Delete attachments for a payment filtered by type
+   */
+  deleteByPaymentIdAndType: async (payment_id, attachment_type) => {
+    const sql =
+      "DELETE FROM payment_attachments WHERE payment_id = ? AND attachment_type = ?";
+    return db.query(sql, [payment_id, attachment_type]);
+  },
+
+  /**
    * Check if payment has a check stub
    */
   hasCheckStub: async (payment_id) => {
@@ -132,6 +163,19 @@ const attachmentRepository = {
       SELECT COUNT(*) as count
       FROM payment_attachments
       WHERE payment_id = ? AND attachment_type = 'check_stub'
+    `;
+    const results = await db.query(sql, [payment_id]);
+    return results[0]?.count > 0;
+  },
+
+  /**
+   * Check if payment has a deposit receipt
+   */
+  hasDepositReceipt: async (payment_id) => {
+    const sql = `
+      SELECT COUNT(*) as count
+      FROM payment_attachments
+      WHERE payment_id = ? AND attachment_type = 'deposit_receipt'
     `;
     const results = await db.query(sql, [payment_id]);
     return results[0]?.count > 0;

@@ -9,24 +9,27 @@ const vendorsUrl = `${apiUrl}/accounting/vendors`;
 let user;
 let expenses = [];
 let vendors = [];
+let categories = [];
 let filterCategory = "";
 let isSubmitting = false;
 
-const categoryLabels = {
-  office: "Office Supplies",
-  technology: "Technology & Software",
-  staff: "Staff & Training",
-  utilities: "Utilities & Rent",
-  marketing: "Marketing & Advertising",
-  professional: "Professional Services",
-  other: "Other",
-};
+// Create lookup object for category codes to objects
+function getCategoryMap() {
+  const map = {};
+  categories.forEach((cat) => {
+    map[cat.code] = cat;
+  });
+  return map;
+}
 
 // Initialize
 async function initializeExpenses() {
   console.debug("[pm-expenses.mjs] Initializing");
   user = await getSessionUser();
+  await loadCategories();
   await loadVendors();
+  await populateCategoryDropdown();
+  await populateCategoryFilters();
   setupEventListeners();
   setupKeyboardShortcuts();
   setTodayDate();
@@ -45,19 +48,8 @@ function setupEventListeners() {
     .getElementById("entryForm")
     .addEventListener("submit", submitExpense);
 
-  // Category filter buttons
-  document.querySelectorAll(".category-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      document
-        .querySelectorAll(".category-btn")
-        .forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      filterCategory = btn.dataset.filter;
-      displayExpenses();
-      updateStats();
-    });
-  });
+  // Category filter buttons are handled in populateCategoryFilters()
+  // which is called during initialization
 
   // Export & Refresh
   document.getElementById("exportBtn").addEventListener("click", exportToCSV);
@@ -65,6 +57,11 @@ function setupEventListeners() {
     await loadExpenses();
     showMessage("Refreshed", "success");
   });
+
+  // File input listener for receipt uploads
+  document
+    .getElementById("receiptFileInput")
+    .addEventListener("change", handleReceiptFileSelection);
 }
 
 function setupKeyboardShortcuts() {
@@ -83,6 +80,72 @@ function setTodayDate() {
   const month = String(today.getMonth() + 1).padStart(2, "0");
   const day = String(today.getDate()).padStart(2, "0");
   document.getElementById("entryDate").value = `${year}-${month}-${day}`;
+}
+
+async function loadCategories() {
+  try {
+    const response = await fetch(`${expensesUrl}/categories`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    categories = await response.json();
+  } catch (error) {
+    console.error("Error loading categories:", error);
+    showMessage("Error loading expense categories", "error");
+  }
+}
+
+function populateCategoryDropdown() {
+  const select = document.getElementById("entryCategory");
+  select.innerHTML = "";
+
+  categories.forEach((cat) => {
+    const option = document.createElement("option");
+    option.value = cat.code;
+    option.textContent = cat.name;
+    select.appendChild(option);
+  });
+}
+
+function populateCategoryFilters() {
+  const filterContainer = document.querySelector(".category-filter");
+  if (!filterContainer) return;
+
+  // Clear existing buttons except "All"
+  const buttons = filterContainer.querySelectorAll(
+    ".category-btn:not(.active)",
+  );
+  buttons.forEach((btn) => btn.remove());
+
+  // Add category filter buttons
+  categories.forEach((cat) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "category-btn";
+    btn.dataset.filter = cat.code;
+    btn.textContent = cat.name;
+    filterContainer.appendChild(btn);
+  });
+
+  // Re-attach event listeners to all category buttons
+  document.querySelectorAll(".category-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      document
+        .querySelectorAll(".category-btn")
+        .forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      filterCategory = btn.dataset.filter;
+      displayExpenses();
+      updateStats();
+    });
+  });
 }
 
 async function loadVendors() {
@@ -234,15 +297,26 @@ function displayExpenses() {
     vendorMap[v.id] = v.name;
   });
 
+  // Create category lookup
+  const categoryMap = getCategoryMap();
+
   const html = filtered.map((e) => {
     const amount = parseFloat(e.amount) || 0;
-    const categoryLabel = categoryLabels[e.category] || e.category;
-    const categorySpan = `<span class="log-category">${e.category}</span>`;
+    const category = categoryMap[e.category];
+    const categoryName = category ? category.name : e.category;
+    const categorySpan = `<span class="log-category">${categoryName}</span>`;
     const vendorName = e.vendor_id
       ? escapeHtml(vendorMap[e.vendor_id] || "Unknown")
       : "";
     const vendorStr = vendorName
       ? `<span style="color:#0066cc;font-weight:500">${vendorName}</span> — `
+      : "";
+
+    // Receipt status styling
+    const hasReceipts = e.receipt_count && e.receipt_count > 0;
+    const receiptClass = hasReceipts ? "receipt-attached" : "receipt-empty";
+    const receiptBadge = hasReceipts
+      ? `<span class="receipt-badge">${e.receipt_count}</span>`
       : "";
 
     return `
@@ -251,12 +325,31 @@ function displayExpenses() {
         <div class="log-amount">$${amount.toFixed(2)}</div>
         <div>${categorySpan}</div>
         <div class="log-description">${vendorStr}${escapeHtml(e.description)}</div>
-        <div class="log-delete" data-id="${e.id}" title="Delete">✕</div>
+        <div class="log-action log-receipt ${receiptClass}" data-id="${e.id}" data-receipt-count="${e.receipt_count || 0}" title="${hasReceipts ? "View Receipt" : "Attach Receipt"}">📎${receiptBadge}</div>
+        <div class="log-action log-delete" data-id="${e.id}" title="Delete">✕</div>
       </div>
     `;
   });
 
   log.innerHTML = html.join("");
+
+  // Add receipt upload/download listeners
+  document.querySelectorAll(".log-receipt").forEach((el) => {
+    el.addEventListener("click", async (e) => {
+      // Skip if clicking on the badge (count number)
+      if (e.target.classList.contains("receipt-badge")) {
+        e.stopPropagation();
+        const expenseId = el.dataset.id;
+        await downloadReceipt(expenseId);
+        return;
+      }
+      // Otherwise, paperclip click = upload
+      const receiptElement = e.currentTarget;
+      const expenseId = receiptElement.dataset.id;
+      const receiptCount = parseInt(receiptElement.dataset.receiptCount) || 0;
+      await attachReceipt(expenseId, receiptCount);
+    });
+  });
 
   // Add delete listeners
   document.querySelectorAll(".log-delete").forEach((el) => {
@@ -286,6 +379,101 @@ async function deleteExpense(id) {
   } catch (error) {
     console.error("Error deleting:", error);
     showMessage("Error deleting expense", "error");
+  }
+}
+
+let currentExpenseIdForReceipt = null;
+
+async function attachReceipt(expenseId, receiptCount) {
+  // Always open upload dialog when paperclip is clicked
+  // The green badge just shows receipts exist, but user can still attach more
+  currentExpenseIdForReceipt = expenseId;
+  document.getElementById("receiptFileInput").click();
+}
+
+async function downloadReceipt(expenseId) {
+  // Download the most recent receipt for this expense
+  try {
+    const response = await fetch(`${expensesUrl}/${expenseId}/receipts`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch receipts");
+    }
+
+    const receipts = await response.json();
+    if (receipts.length > 0) {
+      // Download the most recent receipt (first in list)
+      const receipt = receipts[0];
+      const downloadUrl = `${expensesUrl}/receipts/${receipt.id}`;
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = receipt.filename;
+      link.click();
+    }
+  } catch (error) {
+    console.error("Error downloading receipt:", error);
+    showMessage("Error downloading receipt", "error");
+  }
+}
+
+async function handleReceiptFileSelection(e) {
+  const file = e.target.files[0];
+  if (!file) {
+    return;
+  }
+
+  if (!currentExpenseIdForReceipt) {
+    showMessage("Error: Expense ID not set", "error");
+    return;
+  }
+
+  // Confirm upload
+  const fileName = file.name;
+  if (
+    !confirm(
+      `Upload receipt: ${fileName}?\n\nFile size: ${(file.size / 1024).toFixed(2)} KB`,
+    )
+  ) {
+    // Reset file input
+    document.getElementById("receiptFileInput").value = "";
+    return;
+  }
+
+  await uploadReceipt(currentExpenseIdForReceipt, file);
+
+  // Reset file input
+  document.getElementById("receiptFileInput").value = "";
+  currentExpenseIdForReceipt = null;
+}
+
+async function uploadReceipt(expenseId, file) {
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("receipt_type", "receipt");
+
+    const response = await fetch(`${expensesUrl}/${expenseId}/receipts`, {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Failed to upload receipt");
+    }
+
+    const result = await response.json();
+    console.log("Receipt uploaded:", result);
+    showMessage(`✓ Receipt saved: ${file.name}`, "success");
+    await loadExpenses();
+  } catch (error) {
+    console.error("Error uploading receipt:", error);
+    showMessage(`Error uploading receipt: ${error.message}`, "error");
   }
 }
 

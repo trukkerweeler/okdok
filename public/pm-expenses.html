@@ -79,7 +79,7 @@
 
       .log-entry {
         display: grid;
-        grid-template-columns: 80px 80px 90px 1fr 50px;
+        grid-template-columns: 80px 80px 90px 1fr 50px 50px;
         gap: 12px;
         padding: 10px;
         border-bottom: 1px solid #f0f0f0;
@@ -122,15 +122,62 @@
         white-space: nowrap;
       }
 
-      .log-delete {
+      .log-action {
         text-align: center;
         cursor: pointer;
         color: #999;
         font-size: 18px;
+        position: relative;
+      }
+
+      .log-action:hover {
+        color: #0066cc;
       }
 
       .log-delete:hover {
         color: #dc3545;
+      }
+
+      /* Receipt status indicators */
+      .receipt-empty {
+        color: #ccc;
+      }
+
+      .receipt-empty:hover {
+        color: #0066cc;
+      }
+
+      .receipt-attached {
+        color: #28a745;
+        font-weight: bold;
+      }
+
+      .receipt-attached:hover {
+        color: #20c997;
+      }
+
+      .receipt-badge {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        background-color: #28a745;
+        color: white;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .receipt-badge:hover {
+        background-color: #20c997;
+        transform: scale(1.1);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
       }
 
       .action-buttons {
@@ -307,13 +354,7 @@
           <div class="form-group-compact">
             <label>Category *</label>
             <select id="entryCategory" required class="form-select">
-              <option value="office">Office Supplies</option>
-              <option value="technology">Technology & Software</option>
-              <option value="staff">Staff & Training</option>
-              <option value="utilities">Utilities & Rent</option>
-              <option value="marketing">Marketing & Advertising</option>
-              <option value="professional">Professional Services</option>
-              <option value="other">Other</option>
+              <!-- Populated dynamically by JavaScript -->
             </select>
           </div>
 
@@ -381,19 +422,7 @@
         <!-- Category Filter -->
         <div class="category-filter">
           <button class="category-btn active" data-filter="">All</button>
-          <button class="category-btn" data-filter="office">Office</button>
-          <button class="category-btn" data-filter="technology">Tech</button>
-          <button class="category-btn" data-filter="staff">Staff</button>
-          <button class="category-btn" data-filter="utilities">
-            Utilities
-          </button>
-          <button class="category-btn" data-filter="marketing">
-            Marketing
-          </button>
-          <button class="category-btn" data-filter="professional">
-            Professional
-          </button>
-          <button class="category-btn" data-filter="other">Other</button>
+          <!-- Category buttons populated dynamically by JavaScript -->
         </div>
 
         <!-- Expense Log -->
@@ -405,6 +434,14 @@
         </div>
       </div>
     </div>
+
+    <!-- Hidden file input for receipt uploads -->
+    <input
+      type="file"
+      id="receiptFileInput"
+      style="display: none"
+      accept=".pdf,.jpg,.jpeg,.png,.gif,.tiff"
+    />
 
     <footer id="footer"></footer>
 

@@ -13,6 +13,7 @@ let user;
 let payments = [];
 let invoices = [];
 let paymentCheckStubs = {}; // Map of payment_id -> has_check_stub
+let paymentDepositReceipts = {}; // Map of payment_id -> has_deposit_receipt
 
 // Initialize handler function
 async function initializePayments() {
@@ -222,13 +223,42 @@ async function savePayment(event) {
               uploadError.error || "Failed to upload check stub"
             }`,
           );
-          // Don't block payment creation if file upload fails
         } else {
           console.log("Check stub uploaded successfully");
         }
       } catch (uploadError) {
         console.error("Error uploading check stub:", uploadError);
-        // Don't block payment creation if file upload fails
+      }
+    }
+
+    // If a deposit receipt file was provided, upload it
+    const depositReceiptFile = formData.get("deposit_receipt");
+    if (depositReceiptFile && depositReceiptFile.size > 0) {
+      const depositFormData = new FormData();
+      depositFormData.append("deposit_receipt", depositReceiptFile);
+
+      try {
+        const uploadResponse = await fetch(
+          `${paymentsUrl}/${newPayment.id}/deposit-receipt`,
+          {
+            method: "PUT",
+            body: depositFormData,
+            credentials: "include",
+          },
+        );
+
+        if (!uploadResponse.ok) {
+          const uploadError = await uploadResponse.json();
+          console.warn(
+            `Deposit receipt upload warning: ${
+              uploadError.error || "Failed to upload deposit receipt"
+            }`,
+          );
+        } else {
+          console.log("Deposit receipt uploaded successfully");
+        }
+      } catch (uploadError) {
+        console.error("Error uploading deposit receipt:", uploadError);
       }
     }
 
@@ -259,19 +289,24 @@ async function loadPaymentsData() {
     //   console.log("First payment full object:", payments[0]);
     // }
 
-    // Check which payments have check stubs
+    // Check which payments have check stubs and deposit receipts
     paymentCheckStubs = {};
+    paymentDepositReceipts = {};
     for (const payment of payments) {
       try {
-        const stubResponse = await fetch(
-          `${paymentsUrl}/${payment.id}/check-stub`,
-          {
+        const [stubResponse, receiptResponse] = await Promise.all([
+          fetch(`${paymentsUrl}/${payment.id}/check-stub`, {
             credentials: "include",
-          },
-        );
+          }),
+          fetch(`${paymentsUrl}/${payment.id}/deposit-receipt`, {
+            credentials: "include",
+          }),
+        ]);
         paymentCheckStubs[payment.id] = stubResponse.ok;
+        paymentDepositReceipts[payment.id] = receiptResponse.ok;
       } catch (error) {
         paymentCheckStubs[payment.id] = false;
+        paymentDepositReceipts[payment.id] = false;
       }
     }
 
@@ -316,7 +351,11 @@ function displayPayments() {
 
       const checkStubButton = paymentCheckStubs[payment.id]
         ? `<button class="btn btn-sm btn-info download-check-stub-btn" data-id="${payment.id}" title="Download Check Stub">📄</button>`
-        : `<button class="btn btn-sm btn-secondary" disabled title="No check stub">—</button>`;
+        : `<button class="btn btn-sm btn-outline-secondary" disabled title="No check stub">📄</button>`;
+
+      const depositReceiptButton = paymentDepositReceipts[payment.id]
+        ? `<button class="btn btn-sm btn-info download-deposit-receipt-btn" data-id="${payment.id}" title="Download Deposit Receipt">🏦</button>`
+        : `<button class="btn btn-sm btn-outline-secondary" disabled title="No deposit receipt">🏦</button>`;
 
       // Show recipient based on transaction type
       const recipientDisplay =
@@ -337,6 +376,7 @@ function displayPayments() {
           <td>
             <div class="btn-group btn-group-sm" role="group">
               ${checkStubButton}
+              ${depositReceiptButton}
               <button class="btn btn-sm btn-danger delete-btn" data-id="${payment.id}" title="Delete Payment">🗑️</button>
             </div>
           </td>
@@ -348,8 +388,16 @@ function displayPayments() {
   // Add event listeners for download check stub buttons
   tbody.querySelectorAll(".download-check-stub-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
-      const paymentId = parseInt(e.target.dataset.id);
+      const paymentId = parseInt(e.currentTarget.dataset.id);
       downloadCheckStub(paymentId);
+    });
+  });
+
+  // Add event listeners for download deposit receipt buttons
+  tbody.querySelectorAll(".download-deposit-receipt-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const paymentId = parseInt(e.currentTarget.dataset.id);
+      downloadDepositReceipt(paymentId);
     });
   });
 
@@ -457,36 +505,48 @@ async function deletePayment(paymentId) {
   }
 }
 
+async function downloadAttachment(url, defaultFilename) {
+  const response = await fetch(url, { credentials: "include" });
+  if (!response.ok) {
+    throw new Error("Failed to download file");
+  }
+  const contentDisposition = response.headers.get("Content-Disposition");
+  let filename = defaultFilename;
+  if (contentDisposition) {
+    const match = contentDisposition.match(/filename="(.+?)"/);
+    if (match) filename = match[1];
+  }
+  const blob = await response.blob();
+  const objectUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(objectUrl);
+  document.body.removeChild(a);
+}
+
 async function downloadCheckStub(paymentId) {
   try {
-    const response = await fetch(`${paymentsUrl}/${paymentId}/check-stub`, {
-      credentials: "include",
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to download check stub");
-    }
-
-    // Get the filename from Content-Disposition header
-    const contentDisposition = response.headers.get("Content-Disposition");
-    let filename = "check-stub";
-    if (contentDisposition) {
-      const match = contentDisposition.match(/filename="(.+?)"/);
-      if (match) filename = match[1];
-    }
-
-    // Convert response to blob and download
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
+    await downloadAttachment(
+      `${paymentsUrl}/${paymentId}/check-stub`,
+      "check-stub",
+    );
   } catch (error) {
     console.error("Error downloading check stub:", error);
+    alert(`Error: ${error.message}`);
+  }
+}
+
+async function downloadDepositReceipt(paymentId) {
+  try {
+    await downloadAttachment(
+      `${paymentsUrl}/${paymentId}/deposit-receipt`,
+      "deposit-receipt",
+    );
+  } catch (error) {
+    console.error("Error downloading deposit receipt:", error);
     alert(`Error: ${error.message}`);
   }
 }

@@ -22,11 +22,14 @@ const ledgerRepository = {
       SELECT 
         le.*,
         da.name as debit_account_name,
-        ca.name as credit_account_name
+        ca.name as credit_account_name,
+        COALESCE(COUNT(tr.id), 0) as receipt_count
       FROM ledger_entries le
       LEFT JOIN accounts da ON le.debit_account_id = da.id
       LEFT JOIN accounts ca ON le.credit_account_id = ca.id
+      LEFT JOIN transaction_receipts tr ON le.id = tr.ledger_id
       WHERE le.owner_id = ? 
+      GROUP BY le.id
       ORDER BY le.date DESC, le.created_at DESC
     `;
     return db.query(sql, [owner_id]);
@@ -73,7 +76,7 @@ const ledgerRepository = {
    * Create a new ledger entry (double-entry transaction)
    */
   create: async ({
-    date = new Date().toISOString().split('T')[0],
+    date = new Date().toISOString().split("T")[0],
     debit_account_id,
     credit_account_id,
     amount,
@@ -207,6 +210,40 @@ const ledgerRepository = {
     const sql =
       "UPDATE ledger_entries SET reimbursement_status = ? WHERE id = ?";
     await db.query(sql, [status, id]);
+  },
+
+  /**
+   * Get unreimbursed management fees for an owner
+   * @param {number} owner_id - Owner ID
+   * @returns {Promise<array>} Array of unreimbursed fee ledger entries
+   */
+  getUnreimbursedFees: async (owner_id) => {
+    const sql = `
+      SELECT le.*
+      FROM ledger_entries le
+      JOIN accounts credit_acc ON le.credit_account_id = credit_acc.id
+      WHERE le.owner_id = ?
+        AND credit_acc.name = 'Management Fee Income'
+        AND (le.reimbursement_status = 'unreimbursed' OR le.reimbursement_status IS NULL)
+      ORDER BY le.date ASC
+    `;
+    return db.query(sql, [owner_id]);
+  },
+
+  /**
+   * Get fees linked to a distribution
+   * @param {number} distribution_id - Distribution ledger entry ID
+   * @returns {Promise<array>} Array of linked fee entries
+   */
+  getDistributionFees: async (distribution_id) => {
+    const sql = `
+      SELECT le.*, df.amount as fee_amount
+      FROM distribution_fees df
+      JOIN ledger_entries le ON df.fee_id = le.id
+      WHERE df.distribution_id = ?
+      ORDER BY le.date ASC
+    `;
+    return db.query(sql, [distribution_id]);
   },
 };
 

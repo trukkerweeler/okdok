@@ -93,7 +93,7 @@ const ledgerService = {
 
     // Create ledger entry
     const entry = await ledgerRepository.create({
-      date: new Date(date),
+      date: date,
       debit_account_id,
       credit_account_id,
       amount,
@@ -254,6 +254,24 @@ const ledgerService = {
    */
   getDistributionExpenses: async (distribution_id) => {
     return ledgerRepository.getDistributionExpenses(distribution_id);
+  },
+
+  /**
+   * Get unreimbursed management fees for an owner
+   * @param {number} owner_id
+   * @returns {Promise<array>} Array of unreimbursed fee entries
+   */
+  getUnreimbursedFees: async (owner_id) => {
+    return ledgerRepository.getUnreimbursedFees(owner_id);
+  },
+
+  /**
+   * Get fees linked to a distribution
+   * @param {number} distribution_id
+   * @returns {Promise<array>} Array of fees linked to this distribution
+   */
+  getDistributionFees: async (distribution_id) => {
+    return ledgerRepository.getDistributionFees(distribution_id);
   },
 };
 

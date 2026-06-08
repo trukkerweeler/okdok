@@ -216,6 +216,60 @@
         color: #dc3545;
       }
 
+      .log-action {
+        text-align: center;
+        font-size: 18px;
+        position: relative;
+        white-space: nowrap;
+      }
+
+      .log-receipt {
+        cursor: pointer;
+        color: #ccc;
+        transition: color 0.2s ease;
+      }
+
+      .log-receipt:hover {
+        color: #999;
+      }
+
+      .receipt-empty {
+        color: #ccc;
+      }
+
+      .receipt-attached {
+        color: #28a745;
+        font-weight: bold;
+      }
+
+      .receipt-attached:hover {
+        color: #20c997;
+      }
+
+      .receipt-badge {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        background-color: #28a745;
+        color: white;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .receipt-badge:hover {
+        background-color: #20c997;
+        transform: scale(1.1);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      }
+
       .batch-mode-toggle {
         display: flex;
         gap: 8px;
@@ -388,13 +442,22 @@
         margin-bottom: 10px;
         font-size: 12px;
       }
+      /* Hide number input spinners to prevent accidental amount changes */
+      input[type="number"]::-webkit-outer-spin-button,
+      input[type="number"]::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
     </style>
   </head>
   <body class="transactions-page">
     <header id="header"></header>
 
-    <div class="container-fluid" style="padding: 15px">
-      <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="container-fluid" style="padding: 15px 15px 1px 15px">
+      <div
+        class="d-flex justify-content-between align-items-center"
+        style="margin-bottom: 2px"
+      >
         <h1 class="h3 mb-0">Transactions</h1>
         <div>
           <button
@@ -462,6 +525,8 @@
               step="0.01"
               placeholder="0.00"
               required
+              autocomplete="off"
+              style="-moz-appearance: textfield"
               class="form-control"
             />
           </div>
@@ -483,7 +548,11 @@
             </select>
           </div>
 
-          <div class="form-group-compact" id="invoiceSelectionGroup" style="display: none">
+          <div
+            class="form-group-compact"
+            id="invoiceSelectionGroup"
+            style="display: none"
+          >
             <label>Close Invoice (Optional)</label>
             <select id="entryInvoice" class="form-control">
               <option value="">-- No invoice --</option>
@@ -588,6 +657,21 @@
           </div>
         </div>
 
+        <!-- Unreimbursed Expenses -->
+        <div
+          class="log-summary"
+          style="background: #fff3cd; border: 1px solid #ffc107"
+        >
+          <div class="summary-stat">
+            <div class="summary-label">Unreimbursed</div>
+            <div class="summary-value" id="statsUnreimbursedCount">0</div>
+          </div>
+          <div class="summary-stat">
+            <div class="summary-label">Balance Due</div>
+            <div class="summary-value" id="statsUnreimbursedBalance">$0</div>
+          </div>
+        </div>
+
         <!-- Property Filter -->
         <div style="margin-bottom: 12px">
           <label
@@ -631,31 +715,180 @@
     <!-- Distribution Expense Selection Dialog -->
     <dialog id="distributionExpenseDialog" class="dialog p-0">
       <div class="dialog-header p-3 border-bottom">
-        <h2 class="h5 mb-0">Select Expenses to Reimburse</h2>
+        <h2 class="h5 mb-0">Select Fees &amp; Expenses to Deduct</h2>
       </div>
       <form id="distributionExpenseForm" class="form p-3">
-        <div class="expense-selection-container">
+        <!-- Management Fees Section -->
+        <div style="margin-bottom: 15px">
           <div
-            id="expensesList"
-            style="max-height: 400px; overflow-y: auto"
+            style="
+              font-size: 11px;
+              font-weight: 700;
+              text-transform: uppercase;
+              color: #666;
+              letter-spacing: 0.5px;
+              margin-bottom: 6px;
+            "
+          >
+            Management Fees
+          </div>
+          <div
+            id="feesList"
+            style="
+              max-height: 180px;
+              overflow-y: auto;
+              border: 1px solid #e0e0e0;
+              border-radius: 4px;
+            "
           ></div>
         </div>
 
+        <!-- Expenses Section -->
+        <div>
+          <div
+            style="
+              font-size: 11px;
+              font-weight: 700;
+              text-transform: uppercase;
+              color: #666;
+              letter-spacing: 0.5px;
+              margin-bottom: 6px;
+            "
+          >
+            Reimbursable Expenses
+          </div>
+          <div class="expense-selection-container">
+            <div
+              id="expensesList"
+              style="
+                max-height: 220px;
+                overflow-y: auto;
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+              "
+            ></div>
+          </div>
+        </div>
+
         <!-- Net Payout Preview -->
-        <div style="margin-top: 15px; padding: 12px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e0e0e0;">
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px;">
+        <div
+          style="
+            margin-top: 15px;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+          "
+        >
+          <div
+            style="
+              display: grid;
+              grid-template-columns: 1fr 1fr 1fr;
+              gap: 10px;
+              font-size: 13px;
+            "
+          >
             <div>
-              <div style="color: #666; font-size: 11px; text-transform: uppercase; font-weight: 600; margin-bottom: 4px;">Gross Amount</div>
-              <div style="font-family: 'Courier New', monospace; font-weight: 700; font-size: 14px;" id="previewGross">$0.00</div>
+              <div
+                style="
+                  color: #666;
+                  font-size: 11px;
+                  text-transform: uppercase;
+                  font-weight: 600;
+                  margin-bottom: 4px;
+                "
+              >
+                Gross Amount
+              </div>
+              <div
+                style="
+                  font-family: &quot;Courier New&quot;, monospace;
+                  font-weight: 700;
+                  font-size: 14px;
+                "
+                id="previewGross"
+              >
+                $0.00
+              </div>
             </div>
             <div>
-              <div style="color: #666; font-size: 11px; text-transform: uppercase; font-weight: 600; margin-bottom: 4px;">Selected Expenses</div>
-              <div style="font-family: 'Courier New', monospace; font-weight: 700; font-size: 14px; color: #dc3545;" id="previewExpenses">-$0.00</div>
+              <div
+                style="
+                  color: #666;
+                  font-size: 11px;
+                  text-transform: uppercase;
+                  font-weight: 600;
+                  margin-bottom: 4px;
+                "
+              >
+                Selected Fees
+              </div>
+              <div
+                style="
+                  font-family: &quot;Courier New&quot;, monospace;
+                  font-weight: 700;
+                  font-size: 14px;
+                  color: #dc3545;
+                "
+                id="previewFees"
+              >
+                -$0.00
+              </div>
+            </div>
+            <div>
+              <div
+                style="
+                  color: #666;
+                  font-size: 11px;
+                  text-transform: uppercase;
+                  font-weight: 600;
+                  margin-bottom: 4px;
+                "
+              >
+                Selected Expenses
+              </div>
+              <div
+                style="
+                  font-family: &quot;Courier New&quot;, monospace;
+                  font-weight: 700;
+                  font-size: 14px;
+                  color: #dc3545;
+                "
+                id="previewExpenses"
+              >
+                -$0.00
+              </div>
             </div>
           </div>
-          <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
-            <div style="color: #666; font-size: 11px; text-transform: uppercase; font-weight: 600; margin-bottom: 4px;">Net Distribution</div>
-            <div style="font-family: 'Courier New', monospace; font-weight: 700; font-size: 16px; color: #007bff;" id="previewNet">$0.00</div>
+          <div
+            style="
+              margin-top: 10px;
+              padding-top: 10px;
+              border-top: 1px solid #ddd;
+            "
+          >
+            <div
+              style="
+                color: #666;
+                font-size: 11px;
+                text-transform: uppercase;
+                font-weight: 600;
+                margin-bottom: 4px;
+              "
+            >
+              Net Distribution
+            </div>
+            <div
+              style="
+                font-family: &quot;Courier New&quot;, monospace;
+                font-weight: 700;
+                font-size: 16px;
+                color: #007bff;
+              "
+              id="previewNet"
+            >
+              $0.00
+            </div>
           </div>
         </div>
 
@@ -667,8 +900,8 @@
           "
         >
           <small style="color: #666">
-            Select which expenses to include in this reimbursement. Only
-            unreimbursed expenses are shown.
+            Select fees and expenses to deduct from the gross amount. Only
+            uncollected fees and unreimbursed expenses are shown.
           </small>
         </div>
 

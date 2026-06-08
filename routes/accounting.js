@@ -35,6 +35,7 @@ const ledgerRepository = require("../repositories/ledgerRepository");
 const invoiceRepository = require("../repositories/invoiceRepository");
 const paymentRepository = require("../repositories/paymentRepository");
 const attachmentRepository = require("../repositories/attachmentRepository");
+const pmExpenseReceiptRepository = require("../repositories/pmExpenseReceiptRepository");
 const leaseRepository = require("../repositories/leaseRepository");
 const mileageRepository = require("../repositories/mileageRepository");
 const companySettingsRepository = require("../repositories/companySettingsRepository");
@@ -570,12 +571,14 @@ router.get("/ledger/account/:account_id", async (req, res) => {
 /**
  * POST /rent/collect - Record rent collection
  * Debit: Trust Cash, Credit: Rent Income
+ * Optionally marks an invoice as paid in the same transaction
  */
 router.post("/rent/collect", async (req, res) => {
   try {
-    const { amount, property_id, owner_id, tenant_id, memo, date } = req.body;
+    const { amount, property_id, owner_id, tenant_id, memo, date, invoice_id } =
+      req.body;
 
-    // Get or create trust cash and rent income accounts
+    // Get required accounts upfront (outside transaction — read-only)
     let trustAccount = await accountRepository.getByName("Trust Cash Account");
     if (!trustAccount) {
       return res
@@ -590,6 +593,49 @@ router.post("/rent/collect", async (req, res) => {
         .json({ error: "Rent Income Account not found. Run seed script." });
     }
 
+    if (invoice_id) {
+      // Atomic: post ledger entry + mark invoice paid in one DB transaction
+      const entry = await db.transaction(async (connection) => {
+        const insertSql = `
+          INSERT INTO ledger_entries
+          (date, debit_account_id, credit_account_id, amount, memo, property_id, owner_id, tenant_id, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        `;
+        const result = await db.queryInTransaction(connection, insertSql, [
+          date,
+          trustAccount.id,
+          rentIncomeAccount.id,
+          amount,
+          memo || `Rent collected for property ${property_id}`,
+          property_id || null,
+          owner_id || null,
+          tenant_id || null,
+        ]);
+
+        await db.queryInTransaction(
+          connection,
+          "UPDATE invoices SET status = 'paid', updated_at = NOW() WHERE id = ?",
+          [invoice_id],
+        );
+
+        return {
+          id: result.insertId,
+          date,
+          debit_account_id: trustAccount.id,
+          credit_account_id: rentIncomeAccount.id,
+          amount,
+          memo: memo || `Rent collected for property ${property_id}`,
+          property_id: property_id || null,
+          owner_id: owner_id || null,
+          tenant_id: tenant_id || null,
+          invoice_id,
+        };
+      });
+
+      return res.status(201).json(entry);
+    }
+
+    // No invoice — simple ledger post
     const entry = await ledgerService.postTransaction({
       debit_account_id: trustAccount.id,
       credit_account_id: rentIncomeAccount.id,
@@ -693,12 +739,14 @@ router.post("/expenses/owner", async (req, res) => {
 /**
  * POST /distributions/owner - Record owner distribution (atomic)
  * Debit: Owner Equity, Credit: Trust Cash
- * Wraps expense validation, amount deduction, and transaction posting in single DB transaction
+ * Wraps expense/fee validation, amount deduction, and transaction posting in single DB transaction
  * @body expense_ids - (optional) Array of expense IDs to mark as reimbursed
+ * @body fee_ids - (optional) Array of management fee IDs to include on the report
  */
 router.post("/distributions/owner", async (req, res) => {
   try {
-    const { amount, owner_id, property_id, memo, date, expense_ids } = req.body;
+    const { amount, owner_id, property_id, memo, date, expense_ids, fee_ids } =
+      req.body;
 
     let ownerEquityAccount = await accountRepository.getByName("Owner Equity");
     if (!ownerEquityAccount) {
@@ -725,6 +773,21 @@ router.post("/distributions/owner", async (req, res) => {
         JOIN accounts debit_acc ON le.debit_account_id = debit_acc.id
         WHERE le.owner_id = ?
           AND debit_acc.name = 'Owner Expense'
+          AND (le.reimbursement_status = 'unreimbursed' OR le.reimbursement_status IS NULL)
+        ORDER BY le.date ASC
+      `,
+        [owner_id],
+      );
+
+      // Fetch unreimbursed fees for this owner within transaction
+      const unreimbursedFees = await db.queryInTransaction(
+        connection,
+        `
+        SELECT le.*
+        FROM ledger_entries le
+        JOIN accounts credit_acc ON le.credit_account_id = credit_acc.id
+        WHERE le.owner_id = ?
+          AND credit_acc.name = 'Management Fee Income'
           AND (le.reimbursement_status = 'unreimbursed' OR le.reimbursement_status IS NULL)
         ORDER BY le.date ASC
       `,
@@ -764,6 +827,37 @@ router.post("/distributions/owner", async (req, res) => {
         if (distributionAmount <= 0) {
           throw new Error(
             "Distribution amount must be greater than selected reimbursed expenses.",
+          );
+        }
+      }
+
+      // Validate and deduct selected fees
+      if (fee_ids && fee_ids.length > 0) {
+        const selectedFeeIds = fee_ids.map((id) => parseInt(id));
+        const selectedFeeMap = new Map(
+          unreimbursedFees.map((fee) => [parseInt(fee.id), fee]),
+        );
+
+        const invalidFeeIds = selectedFeeIds.filter(
+          (id) => !selectedFeeMap.has(id),
+        );
+        if (invalidFeeIds.length > 0) {
+          throw new Error(
+            "One or more selected fees are invalid or already collected.",
+          );
+        }
+
+        const feeTotalCents = selectedFeeIds.reduce((sum, id) => {
+          const fee = selectedFeeMap.get(id);
+          return sum + Math.round(parseFloat(fee.amount) * 100);
+        }, 0);
+
+        const distributionCents = Math.round(distributionAmount * 100);
+        distributionAmount = (distributionCents - feeTotalCents) / 100;
+
+        if (distributionAmount <= 0) {
+          throw new Error(
+            "Distribution amount must be greater than selected management fees and expenses.",
           );
         }
       }
@@ -816,6 +910,28 @@ router.post("/distributions/owner", async (req, res) => {
           const updateSql =
             "UPDATE ledger_entries SET reimbursement_status = 'reimbursed' WHERE id = ?";
           await db.queryInTransaction(connection, updateSql, [expense_id]);
+        }
+      }
+
+      // Link selected fees and mark as collected within same transaction
+      if (fee_ids && fee_ids.length > 0) {
+        for (const fee_id of fee_ids) {
+          const linkFeeSql = `
+            INSERT INTO distribution_fees (distribution_id, fee_id, amount)
+            SELECT ?, ?, le.amount
+            FROM ledger_entries le
+            WHERE le.id = ?
+          `;
+          await db.queryInTransaction(connection, linkFeeSql, [
+            distributionId,
+            fee_id,
+            fee_id,
+          ]);
+
+          // Mark fee as collected
+          const updateFeeSql =
+            "UPDATE ledger_entries SET reimbursement_status = 'reimbursed' WHERE id = ?";
+          await db.queryInTransaction(connection, updateFeeSql, [fee_id]);
         }
       }
 
@@ -951,6 +1067,19 @@ router.get("/owners/:owner_id/unreimbursed-expenses", async (req, res) => {
     res.json(expenses);
   } catch (error) {
     console.error("Error fetching unreimbursed expenses:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /owners/:owner_id/unreimbursed-fees - Get uncollected management fees for an owner
+ */
+router.get("/owners/:owner_id/unreimbursed-fees", async (req, res) => {
+  try {
+    const fees = await ledgerService.getUnreimbursedFees(req.params.owner_id);
+    res.json(fees);
+  } catch (error) {
+    console.error("Error fetching unreimbursed fees:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1623,8 +1752,11 @@ router.put(
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      // Delete existing check stub if present
-      await attachmentRepository.deleteByPaymentId(paymentId);
+      // Delete existing check stub if present (keep other attachment types)
+      await attachmentRepository.deleteByPaymentIdAndType(
+        paymentId,
+        "check_stub",
+      );
 
       // Create new attachment
       const attachment = await attachmentRepository.create({
@@ -1678,10 +1810,100 @@ router.delete("/payments/:id/check-stub", async (req, res) => {
       return res.status(404).json({ error: "Payment not found" });
     }
 
-    await attachmentRepository.deleteByPaymentId(req.params.id);
+    await attachmentRepository.deleteByPaymentIdAndType(
+      req.params.id,
+      "check_stub",
+    );
     res.json(payment);
   } catch (error) {
     console.error("Error deleting check stub:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /payments/:id/deposit-receipt - Upload or update deposit receipt for a payment
+ */
+router.put(
+  "/payments/:id/deposit-receipt",
+  upload.single("deposit_receipt"),
+  async (req, res) => {
+    try {
+      const paymentId = req.params.id;
+
+      const payment = await paymentRepository.getById(paymentId);
+      if (!payment) {
+        return res.status(404).json({ error: "Payment not found" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      // Delete existing deposit receipt if present (keep other attachment types)
+      await attachmentRepository.deleteByPaymentIdAndType(
+        paymentId,
+        "deposit_receipt",
+      );
+
+      const attachment = await attachmentRepository.create({
+        payment_id: paymentId,
+        attachment_type: "deposit_receipt",
+        file_blob: req.file.buffer,
+        filename: req.file.originalname,
+        mime_type: req.file.mimetype,
+        file_size: req.file.size,
+      });
+
+      res.json(attachment);
+    } catch (error) {
+      console.error("Error uploading deposit receipt:", error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
+/**
+ * GET /payments/:id/deposit-receipt - Download deposit receipt for a payment
+ */
+router.get("/payments/:id/deposit-receipt", async (req, res) => {
+  try {
+    const receipt = await attachmentRepository.getDepositReceiptByPaymentId(
+      req.params.id,
+    );
+    if (!receipt) {
+      return res.status(404).json({ error: "Deposit receipt not found" });
+    }
+
+    res.setHeader("Content-Type", receipt.mime_type);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${receipt.filename}"`,
+    );
+    res.send(receipt.file_blob);
+  } catch (error) {
+    console.error("Error downloading deposit receipt:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /payments/:id/deposit-receipt - Delete deposit receipt for a payment
+ */
+router.delete("/payments/:id/deposit-receipt", async (req, res) => {
+  try {
+    const payment = await paymentRepository.getById(req.params.id);
+    if (!payment) {
+      return res.status(404).json({ error: "Payment not found" });
+    }
+
+    await attachmentRepository.deleteByPaymentIdAndType(
+      req.params.id,
+      "deposit_receipt",
+    );
+    res.json(payment);
+  } catch (error) {
+    console.error("Error deleting deposit receipt:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2072,6 +2294,92 @@ router.delete("/mileage/:id", async (req, res) => {
 });
 
 // ===================================================
+// PM EXPENSE RECEIPT ENDPOINTS
+// ===================================================
+
+/**
+ * GET /pm-expenses/:expense_id/receipts - Get all receipts for an expense
+ */
+router.get("/pm-expenses/:expense_id/receipts", async (req, res) => {
+  try {
+    const receipts = await pmExpenseReceiptRepository.getByExpenseId(
+      req.params.expense_id,
+    );
+    res.json(receipts);
+  } catch (error) {
+    console.error("Error fetching expense receipts:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /pm-expenses/receipts/:id - Download receipt file
+ */
+router.get("/pm-expenses/receipts/:id", async (req, res) => {
+  try {
+    const receipt = await pmExpenseReceiptRepository.getById(req.params.id);
+    if (!receipt) {
+      return res.status(404).json({ error: "Receipt not found" });
+    }
+
+    res.set("Content-Type", receipt.mime_type);
+    res.set(
+      "Content-Disposition",
+      `attachment; filename="${receipt.filename}"`,
+    );
+    res.send(receipt.file_blob);
+  } catch (error) {
+    console.error("Error downloading receipt:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /pm-expenses/:expense_id/receipts - Upload receipt for expense
+ */
+router.post(
+  "/pm-expenses/:expense_id/receipts",
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const { receipt_type = "receipt" } = req.body;
+
+      const receipt = await pmExpenseReceiptRepository.create({
+        pm_expense_id: req.params.expense_id,
+        receipt_type,
+        file_blob: req.file.buffer,
+        filename: req.file.originalname,
+        mime_type: req.file.mimetype,
+        file_size: req.file.size,
+        uploaded_by: req.user?.id || null,
+      });
+
+      res.status(201).json(receipt);
+    } catch (error) {
+      console.error("Error uploading receipt:", error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
+/**
+ * DELETE /pm-expenses/receipts/:id - Delete receipt
+ */
+router.delete("/pm-expenses/receipts/:id", async (req, res) => {
+  try {
+    await pmExpenseReceiptRepository.delete(req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting receipt:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===================================================
 // COMPANY SETTINGS ENDPOINTS
 // ===================================================
 
@@ -2127,6 +2435,117 @@ router.put("/company-settings", async (req, res) => {
     res.json(results);
   } catch (error) {
     console.error("Error updating company settings:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===================================================
+// TRANSACTION RECEIPT ENDPOINTS
+// ===================================================
+
+const transactionReceiptsRepository = require("../repositories/transactionReceiptsRepository");
+
+/**
+ * POST /ledger/:ledger_id/receipts - Upload receipt for a transaction
+ */
+router.post(
+  "/ledger/:ledger_id/receipts",
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      const { ledger_id } = req.params;
+
+      // Verify ledger entry exists
+      const ledger = await ledgerRepository.getById(ledger_id);
+      if (!ledger) {
+        return res.status(404).json({ error: "Transaction not found" });
+      }
+
+      // Verify a file was uploaded
+      if (!req.file) {
+        return res.status(400).json({ error: "No file provided" });
+      }
+
+      // Create receipt record
+      const receipt = await transactionReceiptsRepository.create({
+        ledger_id,
+        file_blob: req.file.buffer,
+        filename: req.file.originalname,
+        mime_type: req.file.mimetype,
+        file_size: req.file.size,
+      });
+
+      res.status(201).json(receipt);
+    } catch (error) {
+      console.error("Error uploading receipt:", error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
+/**
+ * GET /ledger/:ledger_id/receipts - Get all receipts for a transaction
+ */
+router.get("/ledger/:ledger_id/receipts", async (req, res) => {
+  try {
+    const { ledger_id } = req.params;
+
+    // Verify ledger entry exists
+    const ledger = await ledgerRepository.getById(ledger_id);
+    if (!ledger) {
+      return res.status(404).json({ error: "Transaction not found" });
+    }
+
+    const receipts =
+      await transactionReceiptsRepository.getByLedgerId(ledger_id);
+    res.json(receipts);
+  } catch (error) {
+    console.error("Error fetching receipts:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /receipts/:receipt_id - Download a receipt file
+ */
+router.get("/receipts/:receipt_id", async (req, res) => {
+  try {
+    const { receipt_id } = req.params;
+
+    const receipt = await transactionReceiptsRepository.getById(receipt_id);
+    if (!receipt) {
+      return res.status(404).json({ error: "Receipt not found" });
+    }
+
+    // Send the file with appropriate headers
+    res.setHeader("Content-Type", receipt.mime_type);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${receipt.filename}"`,
+    );
+    res.send(receipt.file_blob);
+  } catch (error) {
+    console.error("Error downloading receipt:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /receipts/:receipt_id - Delete a receipt
+ */
+router.delete("/receipts/:receipt_id", async (req, res) => {
+  try {
+    const { receipt_id } = req.params;
+
+    const receipt = await transactionReceiptsRepository.getById(receipt_id);
+    if (!receipt) {
+      return res.status(404).json({ error: "Receipt not found" });
+    }
+
+    await transactionReceiptsRepository.delete(receipt_id);
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting receipt:", error);
     res.status(500).json({ error: error.message });
   }
 });

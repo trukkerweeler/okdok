@@ -7,6 +7,7 @@ const ledgerRepository = require("../repositories/ledgerRepository");
 const ownerRepository = require("../repositories/ownerRepository");
 const propertyRepository = require("../repositories/propertyRepository");
 const vendorsRepository = require("../repositories/vendorsRepository");
+const db = require("../repositories/db");
 
 const distributionReportGenerator = {
   /**
@@ -34,23 +35,29 @@ const distributionReportGenerator = {
     const expenses =
       await ledgerRepository.getDistributionExpenses(distribution_id);
 
+    // Get linked management fees
+    const fees = await ledgerRepository.getDistributionFees(distribution_id);
+
     // Load vendor names
     const vendorMap = {};
-    if (expenses && expenses.length > 0) {
-      try {
-        const vendors = await vendorsRepository.getAll();
-        vendors.forEach((v) => {
-          vendorMap[v.id] = v.name;
-        });
-      } catch (error) {
-        console.warn("Could not load vendors for report:", error);
-      }
+    try {
+      const vendors = await vendorsRepository.getAll();
+      vendors.forEach((v) => {
+        vendorMap[v.id] = v.name;
+      });
+    } catch (error) {
+      console.warn("Could not load vendors for report:", error);
     }
 
     // Calculate totals
     let totalExpenses = 0;
     expenses.forEach((exp) => {
       totalExpenses += parseFloat(exp.reimbursed_amount || exp.amount) || 0;
+    });
+
+    let totalFees = 0;
+    fees.forEach((fee) => {
+      totalFees += parseFloat(fee.fee_amount || fee.amount) || 0;
     });
 
     return {
@@ -82,8 +89,15 @@ const distributionReportGenerator = {
         vendor_id: exp.vendor_id,
         vendor_name: vendorMap[exp.vendor_id] || "Unknown",
       })),
+      fees: fees.map((fee) => ({
+        id: fee.id,
+        date: fee.date,
+        memo: fee.memo,
+        amount: parseFloat(fee.fee_amount || fee.amount),
+      })),
       totals: {
         expenses: totalExpenses,
+        fees: totalFees,
         distribution: parseFloat(distribution.amount),
       },
     };
@@ -95,18 +109,19 @@ const distributionReportGenerator = {
    * @returns {string} HTML report
    */
   generateHTML: (reportData) => {
-    const { distribution, owner, property, expenses, totals } = reportData;
+    const { distribution, owner, property, expenses, fees, totals } =
+      reportData;
 
     const expenseRows = expenses
       .map(
         (exp) => `
         <tr>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${formatDate(exp.date)}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${escapeHtml(exp.memo)}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd; color: #666; font-size: 12px;">
+          <td style="padding: 4px 7px; border-bottom: 1px solid #ddd;">${formatDate(exp.date)}</td>
+          <td style="padding: 4px 7px; border-bottom: 1px solid #ddd;">${escapeHtml(exp.memo)}</td>
+          <td style="padding: 4px 7px; border-bottom: 1px solid #ddd; color: #666; font-size: 12px;">
             ${exp.vendor_name}
           </td>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: right; font-weight: 600;">
+          <td style="padding: 4px 7px; border-bottom: 1px solid #ddd; text-align: right; font-weight: 600;">
             $${parseFloat(exp.amount).toFixed(2)}
           </td>
         </tr>
@@ -116,7 +131,7 @@ const distributionReportGenerator = {
 
     const propertyInfo = property
       ? `
-        <div style="margin: 15px 0; padding: 10px; background: #f9f9f9; border-left: 4px solid #0066cc;">
+        <div style="margin: 8px 0; padding: 8px 10px; background: #f9f9f9; border-left: 4px solid #0066cc; font-size: 13px;">
           <strong>Property:</strong> ${escapeHtml(property.address)}, ${escapeHtml(property.city)}, ${escapeHtml(property.state)}
         </div>
       `
@@ -145,77 +160,77 @@ const distributionReportGenerator = {
     .report-container {
       max-width: 800px;
       margin: 0 auto;
-      padding: 40px 20px;
+      padding: 20px;
     }
     
     .header {
       text-align: center;
-      margin-bottom: 30px;
+      margin-bottom: 16px;
       border-bottom: 2px solid #0066cc;
-      padding-bottom: 20px;
+      padding-bottom: 12px;
     }
     
     .header h1 {
-      font-size: 28px;
+      font-size: 22px;
       color: #0066cc;
-      margin-bottom: 5px;
+      margin-bottom: 2px;
     }
     
     .header p {
       color: #666;
-      font-size: 14px;
+      font-size: 13px;
     }
     
     .section {
-      margin: 25px 0;
+      margin: 14px 0;
       padding: 0;
     }
     
     .section-title {
-      font-size: 14px;
+      font-size: 11px;
       font-weight: 700;
       text-transform: uppercase;
       color: #666;
-      margin-bottom: 12px;
+      margin-bottom: 6px;
       letter-spacing: 0.5px;
     }
     
     .info-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-bottom: 20px;
+      gap: 8px;
+      margin-bottom: 12px;
     }
     
     .info-item {
-      padding: 12px;
+      padding: 8px 10px;
       background: #f9f9f9;
       border-radius: 4px;
     }
     
     .info-label {
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
       color: #999;
-      margin-bottom: 5px;
+      margin-bottom: 2px;
     }
     
     .info-value {
-      font-size: 16px;
+      font-size: 14px;
       font-weight: 600;
       color: #333;
     }
     
     .amount-large {
-      font-size: 24px;
+      font-size: 18px;
       color: #28a745;
     }
     
     .expenses-table {
       width: 100%;
       border-collapse: collapse;
-      margin: 15px 0;
+      margin: 0;
     }
     
     .expenses-table thead {
@@ -223,18 +238,19 @@ const distributionReportGenerator = {
     }
     
     .expenses-table th {
-      padding: 12px;
+      padding: 4px 7px;
       text-align: left;
       font-weight: 600;
-      font-size: 13px;
+      font-size: 11px;
       text-transform: uppercase;
       color: #333;
       border-bottom: 2px solid #ddd;
     }
     
     .expenses-table td {
-      padding: 10px;
-      border-bottom: 1px solid #ddd;
+      padding: 4px 7px;
+      border-bottom: 1px solid #eee;
+      font-size: 13px;
     }
     
     .expenses-table tr:nth-child(even) {
@@ -243,9 +259,9 @@ const distributionReportGenerator = {
     
     .summary-section {
       background: #f9f9f9;
-      padding: 20px;
+      padding: 12px 16px;
       border-radius: 4px;
-      margin-top: 25px;
+      margin-top: 14px;
       border-left: 4px solid #0066cc;
     }
     
@@ -253,15 +269,15 @@ const distributionReportGenerator = {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 10px 0;
-      font-size: 14px;
+      padding: 4px 0;
+      font-size: 13px;
     }
     
     .summary-row.total {
       border-top: 2px solid #ddd;
-      margin-top: 10px;
-      padding-top: 15px;
-      font-size: 18px;
+      margin-top: 6px;
+      padding-top: 8px;
+      font-size: 16px;
       font-weight: 700;
     }
     
@@ -274,12 +290,12 @@ const distributionReportGenerator = {
     }
     
     .footer {
-      margin-top: 40px;
-      padding-top: 20px;
+      margin-top: 20px;
+      padding-top: 12px;
       border-top: 1px solid #ddd;
       text-align: center;
       color: #999;
-      font-size: 12px;
+      font-size: 11px;
     }
     
     @media print {
@@ -325,6 +341,39 @@ const distributionReportGenerator = {
     ${propertyInfo}
     
     <div class="section">
+      <div class="section-title">Management Fees</div>
+
+      ${
+        fees && fees.length > 0
+          ? `
+        <table class="expenses-table">
+          <thead>
+            <tr>
+              <th style="width: 20%;">Date</th>
+              <th style="width: 65%;">Description</th>
+              <th style="width: 15%; text-align: right;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${fees
+              .map(
+                (fee) => `
+              <tr>
+                <td>${formatDate(fee.date)}</td>
+                <td>${escapeHtml(fee.memo)}</td>
+                <td style="text-align: right; font-weight: 600;">$${parseFloat(fee.amount).toFixed(2)}</td>
+              </tr>
+            `,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      `
+          : '<p style="color: #999; padding: 8px; text-align: center; font-size: 12px;">No management fees charged in this period.</p>'
+      }
+    </div>
+
+    <div class="section">
       <div class="section-title">Expenses Reconciled in This Payment</div>
       
       ${
@@ -344,18 +393,26 @@ const distributionReportGenerator = {
           </tbody>
         </table>
       `
-          : '<p style="color: #999; padding: 20px; text-align: center;">No expenses reconciled in this payment.</p>'
+          : '<p style="color: #999; padding: 8px; text-align: center; font-size: 12px;">No expenses reconciled in this payment.</p>'
       }
     </div>
     
     <div class="summary-section">
       <div class="section-title" style="margin-top: 0;">Payment Summary</div>
+      ${
+        totals.fees > 0
+          ? `<div class="summary-row">
+        <span>Management Fees:</span>
+        <span>-$${parseFloat(totals.fees).toFixed(2)}</span>
+      </div>`
+          : ""
+      }
       <div class="summary-row">
-        <span>Total Expenses Reconciled:</span>
-        <span>$${parseFloat(totals.expenses).toFixed(2)}</span>
+        <span>Expenses Reconciled:</span>
+        <span>-$${parseFloat(totals.expenses).toFixed(2)}</span>
       </div>
       <div class="summary-row total">
-        <span class="label">Total Payment:</span>
+        <span class="label">Net Payment to Owner:</span>
         <span class="amount">$${parseFloat(totals.distribution).toFixed(2)}</span>
       </div>
     </div>
@@ -363,9 +420,9 @@ const distributionReportGenerator = {
     ${
       distribution.memo
         ? `
-      <div class="section" style="margin-top: 25px;">
+      <div class="section" style="margin-top: 12px;">
         <div class="section-title">Notes</div>
-        <p style="padding: 12px; background: #f9f9f9; border-radius: 4px; color: #555;">
+        <p style="padding: 8px 10px; background: #f9f9f9; border-radius: 4px; color: #555; font-size: 13px;">
           ${escapeHtml(distribution.memo)}
         </p>
       </div>
@@ -375,7 +432,7 @@ const distributionReportGenerator = {
     
     <div class="footer">
       <p>This report was generated on ${formatDateTime(new Date())} and serves as documentation of expenses reconciled with this payment.</p>
-      <p style="margin-top: 10px; color: #ccc;">For questions, please contact your property manager.</p>
+      <p style="margin-top: 6px; color: #ccc;">For questions, please contact your property manager.</p>
     </div>
   </div>
 </body>
