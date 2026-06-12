@@ -26,7 +26,12 @@ router.get("/", (req, res) => {
         return;
       }
 
-      const query = `select * from PROJECT order by CLOSED, PROJECT_ID`;
+      const query = `
+        SELECT p.*, CONCAT(prop.address, ', ', prop.city) AS PROPERTY_ADDRESS
+        FROM PROJECT p
+        LEFT JOIN properties prop ON p.PROPERTY_ID = prop.id
+        ORDER BY p.CLOSED, p.PROJECT_ID
+      `;
 
       connection.query(query, (err, rows, fields) => {
         if (err) {
@@ -168,13 +173,14 @@ router.post("/", (req, res) => {
         return;
       }
 
-      const query = `insert into PROJECT (PROJECT_ID, NAME, LEADER, PROJECT_TYPE, CREATE_DATE, CREATE_BY, CLOSED) 
-    values (?, ?, ?, ?, ?, ?, ?)`;
+      const query = `insert into PROJECT (PROJECT_ID, NAME, LEADER, PROJECT_TYPE, PROPERTY_ID, CREATE_DATE, CREATE_BY, CLOSED)
+    values (?, ?, ?, ?, ?, ?, ?, ?)`;
       const values = [
         data.PROJECT_ID,
         data.NAME,
         data.LEADER,
         data.PROJECT_TYPE,
+        data.PROPERTY_ID || null,
         data.CREATE_DATE,
         data.CREATE_BY,
         data.CLOSED,
@@ -229,6 +235,71 @@ router.put("/close/:id", (req, res) => {
     console.error("Error connecting to Db:", err);
     res.sendStatus(500);
     return;
+  }
+});
+
+// Link or unlink a property from a project
+router.put("/:id/property", (req, res) => {
+  const { PROPERTY_ID } = req.body; // null to unlink
+  try {
+    const connection = createConnection();
+    connection.connect(function (err) {
+      if (err) {
+        console.error("Error connecting: " + err.stack);
+        res.sendStatus(500);
+        return;
+      }
+
+      const query = `UPDATE PROJECT SET PROPERTY_ID = ? WHERE PROJECT_ID = ?`;
+      connection.query(query, [PROPERTY_ID || null, req.params.id], (err) => {
+        if (err) {
+          console.error("Failed to update project property:", err);
+          res.sendStatus(500);
+          return;
+        }
+        res.sendStatus(200);
+      });
+
+      connection.end();
+    });
+  } catch (err) {
+    console.error("Error connecting to Db:", err);
+    res.sendStatus(500);
+  }
+});
+
+// Get all projects linked to a specific property
+router.get("/by-property/:propertyId", (req, res) => {
+  try {
+    const connection = createConnection();
+    connection.connect(function (err) {
+      if (err) {
+        console.error("Error connecting: " + err.stack);
+        res.sendStatus(500);
+        return;
+      }
+
+      const query = `
+        SELECT PROJECT_ID, NAME, LEADER, PROJECT_TYPE, CLOSED, CREATE_DATE
+        FROM PROJECT
+        WHERE PROPERTY_ID = ?
+        ORDER BY CLOSED, PROJECT_ID
+      `;
+
+      connection.query(query, [req.params.propertyId], (err, rows) => {
+        if (err) {
+          console.error("Failed to query projects by property:", err);
+          res.sendStatus(500);
+          return;
+        }
+        res.json(rows);
+      });
+
+      connection.end();
+    });
+  } catch (err) {
+    console.error("Error connecting to Db:", err);
+    res.sendStatus(500);
   }
 });
 

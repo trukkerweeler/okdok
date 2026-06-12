@@ -7,16 +7,35 @@ loadHeaderFooter();
 const apiUrl = await getApiUrl();
 const propertiesUrl = `${apiUrl}/accounting/properties`;
 const ownersUrl = `${apiUrl}/accounting/owners`;
+const projectsUrl = `${apiUrl}/project`;
 let user;
 let ownersList = [];
+let projectCounts = {}; // property id -> count
 
 // Initialize handler function
 async function initializeProperties() {
   console.debug("[properties.mjs] Initializing");
   user = await getSessionUser();
   await loadOwnersForDropdown();
+  await loadProjectCounts();
   setupEventListeners();
   await loadPropertiesData();
+}
+
+async function loadProjectCounts() {
+  try {
+    const response = await fetch(`${projectsUrl}`, { credentials: "include" });
+    if (!response.ok) return;
+    const projects = await response.json();
+    projectCounts = {};
+    for (const p of projects) {
+      if (p.PROPERTY_ID) {
+        projectCounts[p.PROPERTY_ID] = (projectCounts[p.PROPERTY_ID] || 0) + 1;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not load project counts:", err);
+  }
 }
 
 // Run initialization when DOM is ready
@@ -172,7 +191,7 @@ async function loadPropertiesData() {
     console.error("Error loading properties:", error);
     const tbody = document.getElementById("propertiesTableBody");
     tbody.innerHTML =
-      '<tr><td colspan="8" class="text-center text-danger py-4">Error loading properties</td></tr>';
+      '<tr><td colspan="10" class="text-center text-danger py-4">Error loading properties</td></tr>';
   }
 }
 
@@ -181,7 +200,7 @@ function displayProperties(properties) {
 
   if (!properties || properties.length === 0) {
     tbody.innerHTML =
-      '<tr><td colspan="9" class="text-center text-muted py-4">No properties found. Click + to add one.</td></tr>';
+      '<tr><td colspan="10" class="text-center text-muted py-4">No properties found. Click + to add one.</td></tr>';
     return;
   }
 
@@ -190,6 +209,12 @@ function displayProperties(properties) {
     .map((property) => {
       const owner = ownersList.find((o) => o.id === property.owner_id);
       const ownerName = owner ? owner.name : `Owner #${property.owner_id}`;
+
+      const count = projectCounts[property.id] || 0;
+      const projectsBadge =
+        count > 0
+          ? `<a href="/projects.html?property_id=${property.id}" class="badge bg-primary text-decoration-none">${count} project${count !== 1 ? "s" : ""}</a>`
+          : `<span class="text-muted">—</span>`;
 
       return `
     <tr>
@@ -205,6 +230,7 @@ function displayProperties(properties) {
         </span>
       </td>
       <td>${formatDate(property.created_at)}</td>
+      <td>${projectsBadge}</td>
     </tr>
   `;
     })

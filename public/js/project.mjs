@@ -260,7 +260,10 @@ async function initializeProjectPage() {
         e.preventDefault();
         try {
           const module = await import("./addInputDialog.mjs");
-          await module.openAddInputDialog({ projectId: id });
+          await module.openAddInputDialog({
+            projectId: id,
+            onSave: () => window.location.reload(),
+          });
         } catch (err) {
           // Fallback to navigation if module not available
           window.location.href = `/inputs.html?project=${encodeURIComponent(id)}`;

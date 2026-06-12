@@ -284,4 +284,36 @@ app.listen(port, "0.0.0.0", async () => {
   console.log(
     `okdOk Server running (${nodeEnv}) on port ${port} - http://localhost:${port}`,
   );
+  scheduleAlerts();
 });
+
+// ── Daily Alert Scheduler ────────────────────────────────────────────────────
+// Fires at 8:00 AM every day, sends any SMS alerts due that day.
+function scheduleAlerts() {
+  const { runDailyAlerts } = require("./services/alertService");
+
+  function msUntilNext8am() {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(8, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    return next - now;
+  }
+
+  // Also run immediately on startup for any alerts due today that haven't fired
+  runDailyAlerts().catch((err) =>
+    console.error("[Alerts] Startup check error:", err.message),
+  );
+
+  // Schedule first run at 8am, then every 24h after that
+  setTimeout(function tick() {
+    runDailyAlerts().catch((err) =>
+      console.error("[Alerts] Scheduled run error:", err.message),
+    );
+    setTimeout(tick, 24 * 60 * 60 * 1000);
+  }, msUntilNext8am());
+
+  console.log(
+    `[Alerts] Scheduler started. Next run at 8:00 AM (in ${Math.round(msUntilNext8am() / 60000)} min)`,
+  );
+}

@@ -11,14 +11,23 @@ loadHeaderFooter();
 // Configuration
 const apiUrl = await getApiUrl();
 const url = `${apiUrl}/project`;
-const skippers = ["ENTITY_ID", "MODIFIED_DATE", "MODIFIED_BY", "COST_SAVINGS"];
+const propertiesUrl = `${apiUrl}/accounting/properties`;
+const skippers = [
+  "ENTITY_ID",
+  "MODIFIED_DATE",
+  "MODIFIED_BY",
+  "COST_SAVINGS",
+  "PROPERTY_ID",
+];
 let sortOrder = "asc";
 let user; // Will be set in initialization
+let propertiesList = [];
 
 // Initialize handler function
 async function initializeProjects() {
   console.debug("[projects.mjs] Initializing");
   user = await getSessionUser();
+  await loadPropertiesForDropdown();
   setupEventListeners();
   await loadProjectData();
 }
@@ -62,13 +71,50 @@ function setupEventListeners() {
   }
 }
 
+async function loadPropertiesForDropdown() {
+  try {
+    const response = await fetch(propertiesUrl, { credentials: "include" });
+    if (!response.ok) return;
+    propertiesList = await response.json();
+    populatePropertyDropdown();
+  } catch (err) {
+    console.warn("Could not load properties for dropdown:", err);
+  }
+}
+
+function populatePropertyDropdown() {
+  const select = document.getElementById("PROPERTY_ID");
+  if (!select) return;
+  const options = propertiesList.map(
+    (p) =>
+      `<option value="${p.id}">${escapeHtml(p.address)}, ${escapeHtml(p.city)}</option>`,
+  );
+  select.innerHTML = '<option value="">— None —</option>' + options.join("");
+}
+
+function escapeHtml(text) {
+  if (!text) return "";
+  return String(text).replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;",
+      })[c],
+  );
+}
+
 async function openAddProjectDialog() {
   const dialog = document.getElementById("addProjectDialog");
   if (dialog) {
     // Reset form
     const form = document.getElementById("addProjectForm");
     form.reset();
-
+    // Re-populate in case the list loaded after initial render
+    populatePropertyDropdown();
     dialog.showModal();
   }
 }
@@ -95,6 +141,9 @@ async function saveProject(event) {
       const value = formData.get(field);
 
       switch (field) {
+        case "PROPERTY_ID":
+          dataJson[field] = value ? parseInt(value, 10) : null;
+          break;
         case "LEADER":
         case "ASSIGNED_TO":
         case "SUBJECT":
@@ -134,7 +183,21 @@ async function saveProject(event) {
 
 async function loadProjectData() {
   try {
-    const response = await fetch(url);
+    const params = new URLSearchParams(window.location.search);
+    const propertyId = params.get("property_id");
+
+    let fetchUrl = url;
+    if (propertyId) {
+      fetchUrl = `${url}/by-property/${encodeURIComponent(propertyId)}`;
+      const prop = propertiesList.find((p) => String(p.id) === propertyId);
+      const label = prop
+        ? `${prop.address}, ${prop.city}`
+        : `Property #${propertyId}`;
+      const heading = document.querySelector(".recordsaddrecordheading h1");
+      if (heading) heading.textContent = `Projects — ${label}`;
+    }
+
+    const response = await fetch(fetchUrl);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }

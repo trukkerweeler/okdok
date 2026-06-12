@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Scheduled SMS text alerts." />
+    <meta name="author" content="OKDOK" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Abel&family=Tapestry&display=swap"
+    />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="icon" href="images/okdok.png" />
+    <title>Alerts - OKDOK</title>
+  </head>
+  <body class="alerts-page">
+    <header id="header"></header>
+
+    <div
+      class="recordsaddrecordheading d-flex align-items-center justify-content-between my-3"
+    >
+      <h1 class="h3 mb-0">Text Alerts</h1>
+      <button
+        class="addrecordheadingbutton btn btn-primary btn-lg"
+        id="addAlertBtn"
+        title="Add Alert"
+      >
+        +
+      </button>
+    </div>
+
+    <main class="container my-4">
+      <!-- Info banner -->
+      <div class="alert alert-info mb-4" role="alert">
+        <strong>How it works:</strong> Alerts send a free text message to your
+        phone on a chosen day each month via your carrier's email-to-SMS
+        gateway. Requires SMTP email settings in your <code>.env</code> file.
+      </div>
+
+      <!-- Alerts table -->
+      <div class="table-responsive">
+        <table class="table table-striped table-hover" id="alertsTable">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Message</th>
+              <th>Phone</th>
+              <th>Carrier</th>
+              <th class="text-center">Day</th>
+              <th class="text-center">Active</th>
+              <th>Last Sent</th>
+              <th class="text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="alertsTableBody">
+            <tr>
+              <td colspan="8" class="text-center text-muted py-4">
+                Loading alerts...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+
+    <!-- Add Alert Dialog -->
+    <dialog id="addAlertDialog" class="dialog p-0">
+      <div class="dialog-header p-3 border-bottom">
+        <h2 class="h5 mb-0">Add Alert</h2>
+      </div>
+      <form id="addAlertForm" class="form p-3">
+        <div class="row g-3">
+          <div class="col-12">
+            <label for="addName" class="form-label required">Alert Name</label>
+            <input
+              type="text"
+              id="addName"
+              name="name"
+              required
+              maxlength="100"
+              placeholder="e.g. Water Bill Reminder"
+              class="form-control"
+            />
+          </div>
+
+          <div class="col-12">
+            <label for="addMessage" class="form-label required">Message</label>
+            <textarea
+              id="addMessage"
+              name="message"
+              required
+              rows="3"
+              maxlength="160"
+              placeholder="e.g. Pay water bill today to avoid $50 late fee!"
+              class="form-control"
+            ></textarea>
+            <div class="form-text">
+              <span id="addCharCount">0</span>/160 characters
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <label for="addPhone" class="form-label required"
+              >Phone Number</label
+            >
+            <input
+              type="tel"
+              id="addPhone"
+              name="phone_number"
+              required
+              placeholder="5551234567"
+              class="form-control"
+            />
+            <div class="form-text">10 digits, no dashes or spaces</div>
+          </div>
+
+          <div class="col-md-6">
+            <label for="addCarrier" class="form-label required">Carrier</label>
+            <select
+              id="addCarrier"
+              name="carrier"
+              required
+              class="form-control"
+            >
+              <option value="">Select carrier...</option>
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label for="addDayOfMonth" class="form-label required"
+              >Day of Month</label
+            >
+            <input
+              type="number"
+              id="addDayOfMonth"
+              name="day_of_month"
+              required
+              min="1"
+              max="28"
+              placeholder="19"
+              class="form-control"
+            />
+            <div class="form-text">1–28 (use 28 to avoid month-end issues)</div>
+          </div>
+
+          <div class="col-md-6 d-flex align-items-end">
+            <div class="form-check mb-2">
+              <input
+                type="checkbox"
+                id="addActive"
+                name="active"
+                checked
+                class="form-check-input"
+              />
+              <label for="addActive" class="form-check-label">Active</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2 mt-3">
+          <button type="button" class="btn btn-secondary" id="closeAddAlertBtn">
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-primary">Save Alert</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Edit Alert Dialog -->
+    <dialog id="editAlertDialog" class="dialog p-0">
+      <div class="dialog-header p-3 border-bottom">
+        <h2 class="h5 mb-0">Edit Alert</h2>
+      </div>
+      <form id="editAlertForm" class="form p-3">
+        <input type="hidden" id="editAlertId" name="id" />
+        <div class="row g-3">
+          <div class="col-12">
+            <label for="editName" class="form-label required">Alert Name</label>
+            <input
+              type="text"
+              id="editName"
+              name="name"
+              required
+              maxlength="100"
+              class="form-control"
+            />
+          </div>
+
+          <div class="col-12">
+            <label for="editMessage" class="form-label required">Message</label>
+            <textarea
+              id="editMessage"
+              name="message"
+              required
+              rows="3"
+              maxlength="160"
+              class="form-control"
+            ></textarea>
+            <div class="form-text">
+              <span id="editCharCount">0</span>/160 characters
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <label for="editPhone" class="form-label required"
+              >Phone Number</label
+            >
+            <input
+              type="tel"
+              id="editPhone"
+              name="phone_number"
+              required
+              class="form-control"
+            />
+          </div>
+
+          <div class="col-md-6">
+            <label for="editCarrier" class="form-label required">Carrier</label>
+            <select
+              id="editCarrier"
+              name="carrier"
+              required
+              class="form-control"
+            >
+              <option value="">Select carrier...</option>
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label for="editDayOfMonth" class="form-label required"
+              >Day of Month</label
+            >
+            <input
+              type="number"
+              id="editDayOfMonth"
+              name="day_of_month"
+              required
+              min="1"
+              max="28"
+              class="form-control"
+            />
+          </div>
+
+          <div class="col-md-6 d-flex align-items-end">
+            <div class="form-check mb-2">
+              <input
+                type="checkbox"
+                id="editActive"
+                name="active"
+                class="form-check-input"
+              />
+              <label for="editActive" class="form-check-label">Active</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2 mt-3">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            id="closeEditAlertBtn"
+          >
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-primary">Update Alert</button>
+        </div>
+      </form>
+    </dialog>
+
+    <footer id="footer"></footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module" src="/js/alerts.mjs"></script>
+  </body>
+</html>
