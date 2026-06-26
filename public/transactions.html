@@ -270,25 +270,6 @@
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
       }
 
-      .batch-mode-toggle {
-        display: flex;
-        gap: 8px;
-        margin-bottom: 15px;
-        justify-content: space-between;
-        align-items: center;
-      }
-
-      .batch-textarea {
-        width: 100%;
-        font-family: "Courier New", monospace;
-        font-size: 12px;
-        padding: 10px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        resize: vertical;
-        min-height: 100px;
-      }
-
       .action-buttons {
         display: grid;
         grid-template-columns: 1fr;
@@ -498,22 +479,14 @@
           <button class="type-btn" data-type="distribution">
             💰 Distribution
           </button>
-          <button class="type-btn" id="batchToggle">📋 Batch</button>
         </div>
 
         <!-- Single Entry Form -->
         <form id="entryForm" style="display: block">
           <div class="form-group-compact">
-            <label>Owner *</label>
-            <select id="entryOwner" required class="form-select">
-              <option value="">Select owner...</option>
-            </select>
-          </div>
-
-          <div class="form-group-compact">
-            <label>Property</label>
-            <select id="entryProperty" class="form-select">
-              <option value="">All properties</option>
+            <label>Property *</label>
+            <select id="entryProperty" required class="form-select">
+              <option value="">Select property...</option>
             </select>
           </div>
 
@@ -570,39 +543,6 @@
           <div class="action-buttons">
             <button type="submit" class="btn-compact btn-submit">
               Add Transaction (Enter)
-            </button>
-          </div>
-        </form>
-
-        <!-- Batch Entry Form (Hidden by default) -->
-        <form id="batchForm" style="display: none; margin-bottom: 15px">
-          <div style="margin-bottom: 10px">
-            <label
-              class="form-label"
-              style="font-size: 12px; font-weight: 600; color: #666"
-              >BATCH ENTRY</label
-            >
-            <textarea
-              id="batchInput"
-              class="batch-textarea"
-              placeholder="Paste data (Owner | Amount | Memo) or one per line&#10;Example:&#10;Alice Smith | 500 | Paint job&#10;Bob Jones | 150 | Maintenance fee"
-              spellcheck="false"
-            ></textarea>
-            <div class="help-text">
-              Format: Owner | Amount | Memo (one per line)<br />
-              Or paste from Excel/Sheets - it'll parse columns
-            </div>
-          </div>
-          <div class="action-buttons">
-            <button type="submit" class="btn-compact btn-submit">
-              Process Batch
-            </button>
-            <button
-              type="button"
-              id="batchCancel"
-              class="btn-compact btn-secondary"
-            >
-              Cancel
             </button>
           </div>
         </form>

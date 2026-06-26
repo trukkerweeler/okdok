@@ -20,10 +20,8 @@ let transactions = [];
 let unpaidInvoices = [];
 let currentType = "expense";
 let lastTransaction = null;
-let isBatchMode = false;
 let filterProperty = null;
 let isSubmitting = false;
-let isBatchSubmitting = false;
 let pendingDistribution = null; // Store distribution data for expense selection
 
 // Initialize
@@ -50,28 +48,16 @@ function setupEventListeners() {
   document.querySelectorAll(".type-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       const newType = e.target.dataset.type;
-      if (newType === "batch") {
-        toggleBatchMode();
-      } else {
-        document
-          .querySelectorAll(".type-btn")
-          .forEach((b) => b.classList.remove("active"));
-        e.target.classList.add("active");
-        currentType = newType;
-        updateFormForTransactionType();
-      }
+      document
+        .querySelectorAll(".type-btn")
+        .forEach((b) => b.classList.remove("active"));
+      e.target.classList.add("active");
+      currentType = newType;
+      updateFormForTransactionType();
     });
   });
 
-  // Owner and Property changes for invoice loading
-  document
-    .getElementById("entryOwner")
-    .addEventListener("change", async (e) => {
-      if (currentType === "rent") {
-        await loadUnpaidInvoices();
-      }
-    });
-
+  // Property change: reload invoices for rent type
   document
     .getElementById("entryProperty")
     .addEventListener("change", async (e) => {
@@ -84,10 +70,6 @@ function setupEventListeners() {
   document
     .getElementById("entryForm")
     .addEventListener("submit", submitTransaction);
-  document.getElementById("batchForm").addEventListener("submit", submitBatch);
-  document
-    .getElementById("batchCancel")
-    .addEventListener("click", toggleBatchMode);
 
   // Export & Refresh
   document.getElementById("exportBtn").addEventListener("click", exportToCSV);
@@ -148,7 +130,7 @@ function setupKeyboardShortcuts() {
       switchType("distribution");
     }
     // Enter in amount field to submit
-    if (e.key === "Enter" && e.target.id === "entryAmount" && !isBatchMode) {
+    if (e.key === "Enter" && e.target.id === "entryAmount") {
       e.preventDefault();
       document.getElementById("entryForm").dispatchEvent(new Event("submit"));
     }
@@ -272,21 +254,6 @@ function switchType(type) {
   updateFormForTransactionType();
 }
 
-function toggleBatchMode() {
-  isBatchMode = !isBatchMode;
-  document.getElementById("entryForm").style.display = isBatchMode
-    ? "none"
-    : "block";
-  document.getElementById("batchForm").style.display = isBatchMode
-    ? "block"
-    : "none";
-  if (isBatchMode) {
-    document.getElementById("batchInput").focus();
-  } else {
-    document.getElementById("entryOwner").focus();
-  }
-}
-
 function setTodayDate() {
   // Get local date without UTC conversion to prevent timezone shift
   const today = new Date();
@@ -323,7 +290,6 @@ async function loadOwnersAndProperties() {
     properties = await propsRes.json();
     vendors = await vendorsRes.json();
 
-    populateOwnerDropdown();
     populatePropertyDropdown();
     populatePropertyFilter();
     populateVendorDropdown();
@@ -334,40 +300,29 @@ async function loadOwnersAndProperties() {
   }
 }
 
-function populateOwnerDropdown() {
-  const select = document.getElementById("entryOwner");
-  const options = owners
-    .map((o) => `<option value="${o.id}">${escapeHtml(o.name)}</option>`)
-    .join("");
-  select.innerHTML = '<option value="">Select owner...</option>' + options;
-
-  // Only set first owner by default if there's only one
-  if (owners.length === 1) {
-    select.value = owners[0].id;
-    populatePropertyDropdown();
-  }
-
-  // Update property dropdown when owner changes
-  select.addEventListener("change", populatePropertyDropdown);
-}
-
 function populatePropertyDropdown() {
-  const ownerId = document.getElementById("entryOwner").value;
   const select = document.getElementById("entryProperty");
 
-  const ownerProps = properties.filter(
-    (p) => !ownerId || p.owner_id == ownerId,
-  );
-  const options = ownerProps
+  const options = properties
     .map((p) => `<option value="${p.id}">${escapeHtml(p.address)}</option>`)
     .join("");
 
-  select.innerHTML = '<option value="">All properties</option>' + options;
+  select.innerHTML = '<option value="">Select property...</option>' + options;
 
-  // Auto-select property if there's only one for this owner
-  if (ownerProps.length === 1) {
-    select.value = ownerProps[0].id;
+  // Auto-select if there's only one property
+  if (properties.length === 1) {
+    select.value = properties[0].id;
   }
+}
+
+/**
+ * Derive the owner_id from the currently selected property.
+ */
+function getOwnerIdFromProperty() {
+  const propertyId = document.getElementById("entryProperty").value;
+  if (!propertyId) return null;
+  const prop = properties.find((p) => p.id == propertyId);
+  return prop ? prop.owner_id : null;
 }
 
 function populatePropertyFilter() {
@@ -420,7 +375,7 @@ function updateFormForTransactionType() {
  */
 async function loadUnpaidInvoices() {
   try {
-    const owner_id = parseInt(document.getElementById("entryOwner").value);
+    const owner_id = getOwnerIdFromProperty();
     const property_id = document.getElementById("entryProperty").value
       ? parseInt(document.getElementById("entryProperty").value)
       : null;
@@ -504,10 +459,10 @@ async function submitTransaction(e) {
     return;
   }
 
-  const owner_id = parseInt(document.getElementById("entryOwner").value);
   const property_id = document.getElementById("entryProperty").value
     ? parseInt(document.getElementById("entryProperty").value)
     : null;
+  const owner_id = getOwnerIdFromProperty();
   const amount = parseFloat(document.getElementById("entryAmount").value);
   const memo = document.getElementById("entryMemo").value;
   // Keep date as string from input (YYYY-MM-DD format) - backend will handle it as local date
@@ -520,7 +475,7 @@ async function submitTransaction(e) {
     : null;
 
   if (!owner_id || !amount) {
-    showMessage("Owner and Amount are required", "error");
+    showMessage("Property and Amount are required", "error");
     return;
   }
 
@@ -606,98 +561,14 @@ async function submitTransaction(e) {
       await loadUnpaidInvoices();
     }
 
-    // Focus back to owner for next entry
-    document.getElementById("entryOwner").focus();
+    // Focus back to property for next entry
+    document.getElementById("entryProperty").focus();
     isSubmitting = false;
   } catch (error) {
     console.error("Error:", error);
     showMessage(error.message, "error");
     isSubmitting = false;
   }
-}
-
-async function submitBatch(e) {
-  e.preventDefault();
-
-  // Prevent double submission
-  if (isBatchSubmitting) {
-    return;
-  }
-
-  const input = document.getElementById("batchInput").value.trim();
-  if (!input) {
-    showMessage("Enter transaction data", "error");
-    return;
-  }
-
-  isBatchSubmitting = true;
-
-  const lines = input.split("\n").filter((l) => l.trim());
-  let successCount = 0;
-  let errorCount = 0;
-
-  showMessage(`Processing ${lines.length} transactions...`, "info");
-
-  for (const line of lines) {
-    const parts = line.split("|").map((p) => p.trim());
-    if (parts.length < 2) continue;
-
-    const ownerName = parts[0];
-    const amount = parseFloat(parts[1]);
-    const memo = parts[2] || "";
-
-    // Find owner by name
-    const owner = owners.find(
-      (o) => o.name.toLowerCase() === ownerName.toLowerCase(),
-    );
-    if (!owner) {
-      errorCount++;
-      continue;
-    }
-
-    try {
-      const payload = {
-        amount,
-        owner_id: owner.id,
-        property_id: null,
-        memo,
-        date: formatLocalDate(new Date()),
-      };
-
-      const url =
-        currentType === "expense"
-          ? expensesUrl
-          : currentType === "rent"
-            ? rentUrl
-            : currentType === "fee"
-              ? feesUrl
-              : distributionsUrl;
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        credentials: "include",
-      });
-
-      if (response.ok) {
-        successCount++;
-      } else {
-        errorCount++;
-      }
-    } catch (error) {
-      errorCount++;
-    }
-  }
-
-  showMessage(
-    `✓ ${successCount} processed, ${errorCount} failed`,
-    successCount > errorCount ? "success" : "error",
-  );
-  document.getElementById("batchInput").value = "";
-  await loadTransactions();
-  updateQuickBalances();
-  isBatchSubmitting = false;
 }
 
 /**
@@ -910,8 +781,8 @@ async function submitDistributionWithExpenses(e) {
     await loadTransactions();
     updateQuickBalances();
 
-    // Focus back to owner for next entry
-    document.getElementById("entryOwner").focus();
+    // Focus back to property for next entry
+    document.getElementById("entryProperty").focus();
     pendingDistribution = null;
   } catch (error) {
     console.error("Error:", error);
