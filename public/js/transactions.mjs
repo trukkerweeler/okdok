@@ -401,7 +401,7 @@ async function loadUnpaidInvoices() {
     const allInvoices = await response.json();
 
     // Filter for unpaid invoices matching owner and optional property
-    unpaidInvoices = allInvoices.filter((inv) => {
+    const filtered = allInvoices.filter((inv) => {
       const statusMatch = inv.status !== "paid" && inv.status !== "cancelled";
       const ownerMatch = inv.owner_id === owner_id;
       const propertyMatch = property_id
@@ -409,6 +409,22 @@ async function loadUnpaidInvoices() {
         : true;
       return statusMatch && ownerMatch && propertyMatch;
     });
+
+    // Enrich each invoice with its remaining balance (accounts for prior partial payments)
+    const balanceResults = await Promise.all(
+      filtered.map((inv) =>
+        fetch(`${apiUrl}/accounting/invoice-balance/${inv.id}`, {
+          credentials: "include",
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ),
+    );
+
+    unpaidInvoices = filtered.map((inv, i) => ({
+      ...inv,
+      remaining_balance: balanceResults[i]?.balance ?? inv.amount,
+    }));
 
     populateInvoiceDropdown();
   } catch (error) {
@@ -430,12 +446,16 @@ function populateInvoiceDropdown() {
   unpaidInvoices.forEach((inv) => {
     const option = document.createElement("option");
     option.value = inv.id;
-    option.dataset.amount = inv.amount;
-    const amount = parseFloat(inv.amount).toFixed(2);
+    const remaining = parseFloat(inv.remaining_balance ?? inv.amount);
+    option.dataset.amount = remaining.toFixed(2);
     const dueDate = inv.due_date
       ? new Date(inv.due_date).toLocaleDateString()
       : "No due date";
-    option.textContent = `Invoice #${inv.id} - $${amount} (Due: ${dueDate})`;
+    const isPartial = remaining < parseFloat(inv.amount);
+    const balanceLabel = isPartial
+      ? `$${remaining.toFixed(2)} remaining of $${parseFloat(inv.amount).toFixed(2)}`
+      : `$${remaining.toFixed(2)}`;
+    option.textContent = `Invoice #${inv.id} - ${balanceLabel} (Due: ${dueDate})`;
     select.appendChild(option);
   });
 
@@ -545,10 +565,23 @@ async function submitTransaction(e) {
     lastTransaction = { type: currentType, ...result };
 
     if (currentType === "rent" && invoice_id) {
-      showMessage(
-        `✓ RENT recorded & Invoice #${invoice_id} marked as paid`,
-        "success",
-      );
+      const inv = unpaidInvoices.find((i) => i.id === invoice_id);
+      const remaining = inv
+        ? parseFloat(inv.remaining_balance ?? inv.amount)
+        : null;
+      const isFullPayment =
+        remaining !== null && parseFloat(amount) >= remaining;
+      if (isFullPayment) {
+        showMessage(
+          `✓ RENT recorded & Invoice #${invoice_id} marked as paid`,
+          "success",
+        );
+      } else {
+        showMessage(
+          `✓ RENT recorded (partial payment on Invoice #${invoice_id})`,
+          "success",
+        );
+      }
     } else {
       showMessage(`✓ ${currentType.toUpperCase()} recorded`, "success");
     }

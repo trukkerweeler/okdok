@@ -594,7 +594,17 @@ router.post("/rent/collect", async (req, res) => {
     }
 
     if (invoice_id) {
-      // Atomic: post ledger entry + mark invoice paid in one DB transaction
+      // Verify invoice exists and get current balance before the transaction
+      const invoice = await invoiceRepository.getById(invoice_id);
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      const balanceData = await paymentRepository.getInvoiceBalance(invoice_id);
+      const remainingBalance = balanceData
+        ? parseFloat(balanceData.balance)
+        : parseFloat(invoice.amount);
+
+      // Atomic: post ledger entry + record payment + conditionally mark invoice paid
       const entry = await db.transaction(async (connection) => {
         const insertSql = `
           INSERT INTO ledger_entries
@@ -612,11 +622,23 @@ router.post("/rent/collect", async (req, res) => {
           tenant_id || null,
         ]);
 
+        // Record the payment in invoice_payments
         await db.queryInTransaction(
           connection,
-          "UPDATE invoices SET status = 'paid', updated_at = NOW() WHERE id = ?",
-          [invoice_id],
+          `INSERT INTO invoice_payments
+           (invoice_id, payment_date, amount_paid, payment_method, reference_number, notes, transaction_type, created_at, updated_at)
+           VALUES (?, ?, ?, NULL, NULL, ?, 'tenant_to_manager', NOW(), NOW())`,
+          [invoice_id, date, amount, memo || null],
         );
+
+        // Only mark as paid if this payment covers the remaining balance
+        if (parseFloat(amount) >= remainingBalance) {
+          await db.queryInTransaction(
+            connection,
+            "UPDATE invoices SET status = 'paid', updated_at = NOW() WHERE id = ?",
+            [invoice_id],
+          );
+        }
 
         return {
           id: result.insertId,
@@ -629,6 +651,7 @@ router.post("/rent/collect", async (req, res) => {
           owner_id: owner_id || null,
           tenant_id: tenant_id || null,
           invoice_id,
+          isFullyPaid: parseFloat(amount) >= remainingBalance,
         };
       });
 

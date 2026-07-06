@@ -18,7 +18,8 @@ const invoiceRepository = {
         p.zip as property_zip,
         l.lease_number,
         o.name as owner_name,
-        t.name as tenant_name
+        t.name as tenant_name,
+        COALESCE((SELECT SUM(ip.amount_paid) FROM invoice_payments ip WHERE ip.invoice_id = i.id), 0) as total_paid
       FROM invoices i
       LEFT JOIN properties p ON i.property_id = p.id
       LEFT JOIN leases l ON i.lease_id = l.id

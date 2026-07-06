@@ -448,14 +448,28 @@ function displayInvoices() {
   tbody.innerHTML = invoices
     .map((invoice) => {
       const statusBadgeClass = getStatusBadgeClass(invoice.status);
-      const amountFormatted = formatCurrency(invoice.amount);
       const invoiceDate = formatDate(invoice.invoice_date);
       const dueDate = invoice.due_date ? formatDate(invoice.due_date) : "—";
       const address = invoice.property_address || "—";
       const shadeClass = addressColorMap[address];
 
+      const totalPaid = parseFloat(invoice.total_paid) || 0;
+      const invoiceAmount = parseFloat(invoice.amount) || 0;
+      const isPartial =
+        totalPaid > 0 && totalPaid < invoiceAmount && invoice.status !== "paid";
+      const remaining = invoiceAmount - totalPaid;
+
+      const amountCell = isPartial
+        ? `<div>${formatCurrency(invoiceAmount)}</div>
+           <div style="font-size:0.8em;color:#666;">paid ${formatCurrency(totalPaid)}</div>`
+        : formatCurrency(invoice.amount);
+
+      const partialBadge = isPartial
+        ? `<span class="badge bg-warning text-dark ms-1">Partial</span>`
+        : "";
+
       return `
-        <tr class="${shadeClass}">
+        <tr class="${shadeClass}${isPartial ? " table-warning" : ""}">
           <td><strong>${escapeHtml(invoice.invoice_number)}</strong></td>
           <td>${escapeHtml(invoice.tenant_name || "—")}</td>
           <td>${
@@ -464,10 +478,10 @@ function displayInvoices() {
               : "—"
           }</td>
           <td>${escapeHtml(invoice.lease_number || "—")}</td>
-          <td class="text-end">${amountFormatted}</td>
+          <td class="text-end">${amountCell}</td>
           <td>${invoiceDate}</td>
           <td>${dueDate}</td>
-          <td><span class="badge ${statusBadgeClass}">${escapeHtml(invoice.status)}</span></td>
+          <td><span class="badge ${statusBadgeClass}">${escapeHtml(invoice.status)}</span>${partialBadge}</td>
           <td>
             <button class="btn btn-sm btn-info print-btn" data-id="${invoice.id}" title="Print Invoice">🖨️</button>
             <button class="btn btn-sm btn-danger delete-btn" data-id="${invoice.id}" title="Delete Invoice">🗑️</button>
