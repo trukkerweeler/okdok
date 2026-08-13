@@ -10,6 +10,7 @@ let alertsList = [];
 
 async function init() {
   setupEventListeners();
+  await checkSmtpConfig();
   await loadCarriers();
   await loadAlerts();
 }
@@ -53,6 +54,34 @@ function setupEventListeners() {
       if (e.target.id === id) document.getElementById(id).close();
     });
   });
+}
+
+// ── SMTP Config Check ─────────────────────────────────────────────────────────
+
+async function checkSmtpConfig() {
+  try {
+    const res = await fetch(`${alertsUrl}/smtp-status`);
+    const { configured, missing } = await res.json();
+    if (!configured) {
+      const names = missing.join(", ");
+      document.getElementById("smtpWarning").innerHTML = `
+        <div class="alert alert-warning d-flex align-items-start gap-2 mb-4" role="alert">
+          <span style="font-size:1.2rem;">⚠️</span>
+          <div>
+            <strong>SMTP not configured — alerts cannot be sent.</strong>
+            <div class="mt-1">Missing environment variable${missing.length > 1 ? "s" : ""}:
+              <code>${names}</code>.
+              Add ${missing.length > 1 ? "them" : "it"} to your <code>.env</code> file and restart the server.
+            </div>
+          </div>
+        </div>`;
+      document.getElementById("addAlertBtn").disabled = true;
+      document.getElementById("addAlertBtn").title =
+        "SMTP must be configured before adding alerts";
+    }
+  } catch (err) {
+    console.warn("Could not check SMTP config:", err);
+  }
 }
 
 // ── Data Loading ─────────────────────────────────────────────────────────────

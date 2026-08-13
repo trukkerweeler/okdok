@@ -9,6 +9,8 @@ const router = express.Router();
 const pmExpensesRepository = require("../repositories/pmExpensesRepository");
 const pmExpenseReceiptRepository = require("../repositories/pmExpenseReceiptRepository");
 const pmExpenseCategoryRepository = require("../repositories/pmExpenseCategoryRepository");
+const accountRepository = require("../repositories/accountRepository");
+const ledgerService = require("../services/ledgerService");
 
 // Multer configuration for file uploads (max 10MB per file)
 const upload = multer({
@@ -92,6 +94,33 @@ router.post("/", async (req, res) => {
       vendor_id,
       date,
     });
+
+    // Auto-post ledger entry: Debit PM Operating Expense, Credit PM Operating Cash
+    try {
+      const pmExpenseAccount = await accountRepository.getByName(
+        "PM Operating Expense",
+      );
+      const pmCashAccount =
+        await accountRepository.getByName("PM Operating Cash");
+      if (pmExpenseAccount && pmCashAccount) {
+        const ledgerEntry = await ledgerService.postTransaction({
+          debit_account_id: pmExpenseAccount.id,
+          credit_account_id: pmCashAccount.id,
+          amount: expense.amount,
+          memo: `PM expense: ${expense.description} [${expense.category}]`,
+          vendor_id: expense.vendor_id || null,
+          date: expense.date,
+        });
+        // Save ledger link back to expense record (enables P&L backfill detection)
+        await pmExpensesRepository.setLedgerEntryId(expense.id, ledgerEntry.id);
+        expense.ledger_entry_id = ledgerEntry.id;
+      }
+    } catch (ledgerErr) {
+      console.error(
+        "Warning: PM expense created but ledger post failed:",
+        ledgerErr.message,
+      );
+    }
 
     res.status(201).json(expense);
   } catch (error) {

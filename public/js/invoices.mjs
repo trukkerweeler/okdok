@@ -455,9 +455,8 @@ function displayInvoices() {
 
       const totalPaid = parseFloat(invoice.total_paid) || 0;
       const invoiceAmount = parseFloat(invoice.amount) || 0;
-      const isPartial =
-        totalPaid > 0 && totalPaid < invoiceAmount && invoice.status !== "paid";
       const remaining = invoiceAmount - totalPaid;
+      const isPartial = totalPaid > 0 && remaining > 0.005;
 
       const amountCell = isPartial
         ? `<div>${formatCurrency(invoiceAmount)}</div>

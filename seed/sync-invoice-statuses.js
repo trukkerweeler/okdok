@@ -1,6 +1,9 @@
 /**
  * Migration: Sync invoice statuses with payment data
- * Updates all invoice statuses to "paid" if they have payments covering the full amount
+ * Reconciles invoice statuses to match remaining balance:
+ * - paid when balance <= 0
+ * - pending when balance > 0
+ * Cancelled invoices are preserved as cancelled.
  * Run: node seed/sync-invoice-statuses.js
  */
 const db = require("../repositories/db");
@@ -25,28 +28,25 @@ async function syncInvoiceStatuses() {
 
     let updated = 0;
     let skipped = 0;
+    let cancelledPreserved = 0;
 
     for (const invoice of invoices) {
       const balance = invoice.amount - invoice.total_paid;
-      const shouldBePaid = balance <= 0;
-      const isPaid = invoice.status === "paid";
+      const targetStatus = balance <= 0 ? "paid" : "pending";
 
-      if (shouldBePaid && !isPaid) {
-        // Update to paid
-        await db.query(`UPDATE invoices SET status = 'paid' WHERE id = ?`, [
-          invoice.id,
-        ]);
-        console.log(
-          `✓ ${invoice.invoice_number}: Updated to PAID (paid: $${invoice.total_paid}, amount: $${invoice.amount})`,
+      if (invoice.status === "cancelled") {
+        cancelledPreserved++;
+        continue;
+      }
+
+      if (invoice.status !== targetStatus) {
+        // Reconcile to balance-driven status
+        await db.query(
+          `UPDATE invoices SET status = ?, updated_at = NOW() WHERE id = ?`,
+          [targetStatus, invoice.id],
         );
-        updated++;
-      } else if (!shouldBePaid && isPaid) {
-        // Revert to pending
-        await db.query(`UPDATE invoices SET status = 'pending' WHERE id = ?`, [
-          invoice.id,
-        ]);
         console.log(
-          `✓ ${invoice.invoice_number}: Reverted to PENDING (paid: $${invoice.total_paid}, amount: $${invoice.amount})`,
+          `✓ ${invoice.invoice_number}: Updated to ${targetStatus.toUpperCase()} (paid: $${invoice.total_paid}, amount: $${invoice.amount}, balance: $${balance})`,
         );
         updated++;
       } else {
@@ -57,6 +57,7 @@ async function syncInvoiceStatuses() {
     console.log(`\n✓ Migration complete!`);
     console.log(`  Updated: ${updated} invoices`);
     console.log(`  Already correct: ${skipped} invoices`);
+    console.log(`  Cancelled preserved: ${cancelledPreserved} invoices`);
     process.exit(0);
   } catch (error) {
     console.error("Error syncing invoice statuses:", error);

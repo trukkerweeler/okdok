@@ -12,16 +12,41 @@ let user;
 let properties = [];
 let mileage = [];
 
-// IRS mileage rate (2026)
-const IRS_MILEAGE_RATE = 0.725;
+// IRS standard mileage rates by year — fallback defaults
+// Source: https://www.irs.gov/tax-professionals/standard-mileage-rates
+const DEFAULT_MILEAGE_RATES = {
+  2022: 0.585, // Jan–Jun; IRS raised mid-year to 0.625 Jul–Dec
+  2023: 0.655,
+  2024: 0.67,
+  2025: 0.7,
+  2026: 0.725,
+};
+
+// Active rates — defaults merged with any values saved in Settings
+let activeRates = { ...DEFAULT_MILEAGE_RATES };
+
+function getMileageRate(year) {
+  return (
+    activeRates[year] ??
+    activeRates[Math.max(...Object.keys(activeRates).map(Number))]
+  );
+}
+
+// Backwards-compat alias used by existing code
+const IRS_MILEAGE_RATE = getMileageRate(new Date().getFullYear());
+
+// Currently selected tax year (defaults to current calendar year)
+let selectedYear = new Date().getFullYear();
 
 // Initialize handler function
 async function initializeMileage() {
   console.debug("[mileage.mjs] Initializing");
   user = await getSessionUser();
   setupEventListeners();
+  await loadMileageRatesFromSettings();
   await loadReferenceData();
   await loadMileageData();
+  populateYearFilter();
   setDefaultDate();
   updateStatistics();
 }
@@ -86,6 +111,24 @@ function setupEventListeners() {
         editMileageDialog.close();
       }
     });
+  }
+}
+
+async function loadMileageRatesFromSettings() {
+  try {
+    const response = await fetch(`${apiUrl}/accounting/company-settings`, {
+      credentials: "include",
+    });
+    if (!response.ok) return;
+    const settings = await response.json();
+    Object.entries(settings).forEach(([key, value]) => {
+      const match = key.match(/^mileage_rate_(\d{4})$/);
+      if (match) {
+        activeRates[parseInt(match[1])] = parseFloat(value);
+      }
+    });
+  } catch {
+    // silently fall back to hardcoded defaults
   }
 }
 
@@ -219,13 +262,17 @@ function displayMileage() {
   const tbody = document.getElementById("mileageTableBody");
   if (!tbody) return;
 
-  if (mileage.length === 0) {
-    tbody.innerHTML =
-      '<tr><td colspan="7" class="text-center text-muted py-4">No mileage entries yet. Click the + button to add one.</td></tr>';
+  // Filter to the selected tax year
+  const filtered = mileage.filter(
+    (entry) => new Date(entry.date).getFullYear() === selectedYear,
+  );
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">No mileage entries for ${selectedYear}. Click the + button to add one.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = mileage
+  tbody.innerHTML = filtered
     .map((entry) => {
       const categoryDisplay = formatCategory(entry.category);
       const locations = entry.starting_location
@@ -299,53 +346,166 @@ function formatDate(dateString) {
 }
 
 function updateStatistics() {
-  const today = new Date();
-  const currentMonth = today.getMonth() + 1;
-  const currentYear = today.getFullYear();
+  // Filter for the selected tax year
+  const yearEntries = mileage.filter(
+    (entry) => new Date(entry.date).getFullYear() === selectedYear,
+  );
 
-  // Filter for this month
-  const thisMonthEntries = mileage.filter((entry) => {
-    const entryDate = new Date(entry.date);
-    return (
-      entryDate.getMonth() + 1 === currentMonth &&
-      entryDate.getFullYear() === currentYear
-    );
-  });
-
-  // Calculate totals with type conversion
-  const totalMiles = thisMonthEntries.reduce((sum, entry) => {
-    return sum + (parseFloat(entry.miles_driven) || 0);
-  }, 0);
-
-  const tripCount = thisMonthEntries.length;
+  const totalMiles = yearEntries.reduce(
+    (sum, entry) => sum + (parseFloat(entry.miles_driven) || 0),
+    0,
+  );
+  const tripCount = yearEntries.length;
   const avgMiles = tripCount > 0 ? totalMiles / tripCount : 0;
-  const taxDeduction = totalMiles * IRS_MILEAGE_RATE;
+  const taxDeduction = totalMiles * getMileageRate(selectedYear);
 
-  // Update display
   const thisMonthMilesEl = document.getElementById("thisMonthMiles");
-  if (thisMonthMilesEl) {
-    thisMonthMilesEl.textContent = totalMiles.toFixed(1);
-  }
+  if (thisMonthMilesEl) thisMonthMilesEl.textContent = totalMiles.toFixed(1);
 
   const thisMonthTripsEl = document.getElementById("thisMonthTrips");
-  if (thisMonthTripsEl) {
-    thisMonthTripsEl.textContent = tripCount;
-  }
+  if (thisMonthTripsEl) thisMonthTripsEl.textContent = tripCount;
 
   const taxDeductionEl = document.getElementById("taxDeduction");
-  if (taxDeductionEl) {
+  if (taxDeductionEl)
     taxDeductionEl.textContent = `$${taxDeduction.toFixed(2)}`;
-  }
+
+  const rateLabel = document.getElementById("taxRateLabel");
+  if (rateLabel)
+    rateLabel.textContent = `${selectedYear} Rate: $${getMileageRate(selectedYear).toFixed(3)}/mi`;
 
   const avgMilesEl = document.getElementById("avgMiles");
-  if (avgMilesEl) {
-    avgMilesEl.textContent = avgMiles.toFixed(1);
-  }
+  if (avgMilesEl) avgMilesEl.textContent = avgMiles.toFixed(1);
+}
+
+function populateYearFilter() {
+  const select = document.getElementById("yearFilter");
+  if (!select) return;
+
+  const currentYear = new Date().getFullYear();
+  const years = [
+    ...new Set(mileage.map((e) => new Date(e.date).getFullYear())),
+  ];
+  if (!years.includes(currentYear)) years.push(currentYear);
+  years.sort((a, b) => b - a);
+
+  select.innerHTML = years
+    .map(
+      (y) =>
+        `<option value="${y}"${y === selectedYear ? " selected" : ""}>${y}</option>`,
+    )
+    .join("");
+
+  select.onchange = () => {
+    selectedYear = parseInt(select.value);
+    displayMileage();
+    updateStatistics();
+  };
+
+  const printBtn = document.getElementById("printTaxSummaryBtn");
+  if (printBtn) printBtn.onclick = printTaxSummary;
+}
+
+function printTaxSummary() {
+  const yearEntries = mileage
+    .filter((e) => new Date(e.date).getFullYear() === selectedYear)
+    .slice()
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const totalMiles = yearEntries.reduce(
+    (sum, e) => sum + (parseFloat(e.miles_driven) || 0),
+    0,
+  );
+  const yearRate = getMileageRate(selectedYear);
+  const totalDeduction = totalMiles * yearRate;
+
+  // Aggregate by category
+  const byCategory = {};
+  yearEntries.forEach((e) => {
+    byCategory[e.category] =
+      (byCategory[e.category] || 0) + (parseFloat(e.miles_driven) || 0);
+  });
+
+  // Aggregate by property
+  const byProperty = {};
+  yearEntries.forEach((e) => {
+    const key = e.property_address || "Unassigned";
+    byProperty[key] =
+      (byProperty[key] || 0) + (parseFloat(e.miles_driven) || 0);
+  });
+
+  const categoryRows = Object.entries(byCategory)
+    .sort((a, b) => b[1] - a[1])
+    .map(
+      ([cat, miles]) =>
+        `<tr><td>${formatCategory(cat)}</td><td>${miles.toFixed(1)}</td><td>$${(miles * yearRate).toFixed(2)}</td></tr>`,
+    )
+    .join("");
+
+  const propertyRows = Object.entries(byProperty)
+    .sort((a, b) => b[1] - a[1])
+    .map(
+      ([prop, miles]) =>
+        `<tr><td>${prop}</td><td>${miles.toFixed(1)}</td><td>$${(miles * yearRate).toFixed(2)}</td></tr>`,
+    )
+    .join("");
+
+  const detailRows = yearEntries
+    .map(
+      (e) =>
+        `<tr><td>${formatDate(e.date)}</td><td>${formatCategory(e.category)}</td><td>${e.purpose}</td><td>${e.property_address || "-"}</td><td>${parseFloat(e.miles_driven).toFixed(1)}</td><td>${e.starting_location || ""}${e.ending_location ? " &rarr; " + e.ending_location : ""}</td></tr>`,
+    )
+    .join("");
+
+  const noData = "<tr><td colspan='3' style='color:#999'>No entries</td></tr>";
+  const noDataDetail =
+    "<tr><td colspan='6' style='color:#999'>No entries</td></tr>";
+
+  const win = window.open("", "_blank");
+  win.document.write(`<!doctype html>
+<html>
+<head>
+  <title>Mileage Tax Summary ${selectedYear}</title>
+  <style>
+    body { font-family: Arial, sans-serif; font-size: 12px; margin: 20px; color: #222; }
+    h1 { font-size: 18px; margin-bottom: 4px; }
+    h2 { font-size: 14px; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-top: 24px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th { background: #f0f0f0; text-align: left; padding: 5px 8px; border: 1px solid #ccc; font-size: 11px; }
+    td { padding: 4px 8px; border: 1px solid #ddd; }
+    .summary-box { background: #f5f5f5; border: 2px solid #333; padding: 14px 22px; margin: 16px 0; display: inline-block; border-radius: 4px; }
+    .total { font-size: 15px; font-weight: bold; margin: 3px 0; }
+    .note { color: #999; font-size: 10px; margin-top: 24px; border-top: 1px solid #eee; padding-top: 8px; }
+    .print-btn { float: right; padding: 6px 14px; cursor: pointer; font-size: 12px; }
+    @media print { .print-btn { display: none; } }
+  </style>
+</head>
+<body>
+  <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
+  <h1>Mileage Tax Summary &mdash; ${selectedYear}</h1>
+  <p>IRS Standard Mileage Rate: <strong>\$${yearRate.toFixed(3)}/mile</strong> &nbsp;&bull;&nbsp; ${yearEntries.length} trip${yearEntries.length !== 1 ? "s" : ""} recorded</p>
+  <div class="summary-box">
+    <div class="total">Total Miles: ${totalMiles.toFixed(1)}</div>
+    <div class="total">Total Deduction: \$${totalDeduction.toFixed(2)}</div>
+  </div>
+  <h2>By Category</h2>
+  <table><thead><tr><th>Category</th><th>Miles</th><th>Deduction</th></tr></thead>
+  <tbody>${categoryRows || noData}</tbody></table>
+  <h2>By Property</h2>
+  <table><thead><tr><th>Property</th><th>Miles</th><th>Deduction</th></tr></thead>
+  <tbody>${propertyRows || noData}</tbody></table>
+  <h2>Detail Log</h2>
+  <table><thead><tr><th>Date</th><th>Category</th><th>Purpose</th><th>Property</th><th>Miles</th><th>Route</th></tr></thead>
+  <tbody>${detailRows || noDataDetail}</tbody></table>
+  <p class="note">Generated ${new Date().toLocaleDateString()} &bull; Verify the IRS standard mileage rate for tax year ${selectedYear} at irs.gov before filing.</p>
+</body>
+</html>`);
+  win.document.close();
 }
 
 // Make functions available globally for inline onclick handlers
 window.editMileage = editMileage;
 window.deleteMileage = deleteMileage;
+window.printTaxSummary = printTaxSummary;
 
 async function editMileage(id) {
   const entry = mileage.find((m) => m.id === id);

@@ -60,6 +60,9 @@ const distributionReportGenerator = {
       totalFees += parseFloat(fee.fee_amount || fee.amount) || 0;
     });
 
+    const grossAmount =
+      parseFloat(distribution.amount) + totalExpenses + totalFees;
+
     return {
       distribution: {
         id: distribution.id,
@@ -96,6 +99,7 @@ const distributionReportGenerator = {
         amount: parseFloat(fee.fee_amount || fee.amount),
       })),
       totals: {
+        gross: grossAmount,
         expenses: totalExpenses,
         fees: totalFees,
         distribution: parseFloat(distribution.amount),
@@ -143,7 +147,7 @@ const distributionReportGenerator = {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Payment Reconciliation Report</title>
+  <title>Payment Summary Report</title>
   <style>
     * {
       margin: 0;
@@ -315,8 +319,8 @@ const distributionReportGenerator = {
 <body>
   <div class="report-container">
     <div class="header">
-      <h1>Payment Reconciliation Report</h1>
-      <p>OKDOK Property Management Accounting</p>
+      <h1>Payment Summary Report</h1>
+      <p>OKDOK Property Management</p>
     </div>
     
     <div class="info-grid">
@@ -329,8 +333,8 @@ const distributionReportGenerator = {
         <div class="info-value">${formatDate(distribution.date)}</div>
       </div>
       <div class="info-item">
-        <div class="info-label">Payment Amount</div>
-        <div class="info-value amount-large">$${parseFloat(distribution.amount).toFixed(2)}</div>
+        <div class="info-label">Rent Collected</div>
+        <div class="info-value amount-large">$${parseFloat(totals.gross).toFixed(2)}</div>
       </div>
       <div class="info-item">
         <div class="info-label">Reference ID</div>
@@ -399,6 +403,10 @@ const distributionReportGenerator = {
     
     <div class="summary-section">
       <div class="section-title" style="margin-top: 0;">Payment Summary</div>
+      <div class="summary-row">
+        <span>Rent Collected:</span>
+        <span>$${parseFloat(totals.gross).toFixed(2)}</span>
+      </div>
       ${
         totals.fees > 0
           ? `<div class="summary-row">
@@ -407,10 +415,14 @@ const distributionReportGenerator = {
       </div>`
           : ""
       }
-      <div class="summary-row">
+      ${
+        totals.expenses > 0
+          ? `<div class="summary-row">
         <span>Expenses Reconciled:</span>
         <span>-$${parseFloat(totals.expenses).toFixed(2)}</span>
-      </div>
+      </div>`
+          : ""
+      }
       <div class="summary-row total">
         <span class="label">Net Payment to Owner:</span>
         <span class="amount">$${parseFloat(totals.distribution).toFixed(2)}</span>

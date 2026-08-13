@@ -23,6 +23,7 @@ let lastTransaction = null;
 let filterProperty = null;
 let isSubmitting = false;
 let pendingDistribution = null; // Store distribution data for expense selection
+let amountManuallyEdited = false;
 
 // Initialize
 async function initializeTransactions() {
@@ -70,6 +71,16 @@ function setupEventListeners() {
   document
     .getElementById("entryForm")
     .addEventListener("submit", submitTransaction);
+
+  // Track manual edits so invoice selection does not overwrite intentional partial amounts
+  document.getElementById("entryAmount").addEventListener("input", () => {
+    amountManuallyEdited = true;
+  });
+
+  // Invoice selection can suggest remaining balance, but should not clobber manual amounts
+  document
+    .getElementById("entryInvoice")
+    .addEventListener("change", handleInvoiceSelectionChange);
 
   // Export & Refresh
   document.getElementById("exportBtn").addEventListener("click", exportToCSV);
@@ -366,6 +377,7 @@ function updateFormForTransactionType() {
       invoiceGroup.style.display = "none";
       // Clear invoice selection for non-rent types
       document.getElementById("entryInvoice").value = "";
+      amountManuallyEdited = false;
     }
   }
 }
@@ -375,18 +387,17 @@ function updateFormForTransactionType() {
  */
 async function loadUnpaidInvoices() {
   try {
-    const owner_id = getOwnerIdFromProperty();
     const property_id = document.getElementById("entryProperty").value
       ? parseInt(document.getElementById("entryProperty").value)
       : null;
 
-    if (!owner_id) {
+    if (!property_id) {
       unpaidInvoices = [];
       populateInvoiceDropdown();
       return;
     }
 
-    // Fetch all invoices and filter for unpaid ones
+    // Fetch all invoices and let remaining balance determine openness.
     const response = await fetch(invoicesUrl, {
       credentials: "include",
     });
@@ -400,15 +411,10 @@ async function loadUnpaidInvoices() {
 
     const allInvoices = await response.json();
 
-    // Filter for unpaid invoices matching owner and optional property
-    const filtered = allInvoices.filter((inv) => {
-      const statusMatch = inv.status !== "paid" && inv.status !== "cancelled";
-      const ownerMatch = inv.owner_id === owner_id;
-      const propertyMatch = property_id
-        ? inv.property_id === property_id
-        : true;
-      return statusMatch && ownerMatch && propertyMatch;
-    });
+    // Keep non-cancelled invoices for the currently selected property only.
+    const filtered = allInvoices.filter(
+      (inv) => inv.status !== "cancelled" && inv.property_id === property_id,
+    );
 
     // Enrich each invoice with its remaining balance (accounts for prior partial payments)
     const balanceResults = await Promise.all(
@@ -421,10 +427,14 @@ async function loadUnpaidInvoices() {
       ),
     );
 
-    unpaidInvoices = filtered.map((inv, i) => ({
+    const enrichedInvoices = filtered.map((inv, i) => ({
       ...inv,
       remaining_balance: balanceResults[i]?.balance ?? inv.amount,
     }));
+
+    unpaidInvoices = enrichedInvoices.filter(
+      (inv) => parseFloat(inv.remaining_balance) > 0,
+    );
 
     populateInvoiceDropdown();
   } catch (error) {
@@ -441,7 +451,7 @@ function populateInvoiceDropdown() {
   const select = document.getElementById("entryInvoice");
   if (!select) return;
 
-  select.innerHTML = '<option value="">-- No invoice --</option>';
+  select.innerHTML = '<option value="">-- Not applied to invoice --</option>';
 
   unpaidInvoices.forEach((inv) => {
     const option = document.createElement("option");
@@ -455,20 +465,50 @@ function populateInvoiceDropdown() {
     const balanceLabel = isPartial
       ? `$${remaining.toFixed(2)} remaining of $${parseFloat(inv.amount).toFixed(2)}`
       : `$${remaining.toFixed(2)}`;
-    option.textContent = `Invoice #${inv.id} - ${balanceLabel} (Due: ${dueDate})`;
+    const propertyLabel = inv.property_address
+      ? ` - ${inv.property_address}`
+      : "";
+    option.textContent = `Invoice #${inv.id}${propertyLabel} - ${balanceLabel} (Due: ${dueDate})`;
     select.appendChild(option);
   });
+}
 
-  // Auto-fill amount when an invoice is selected
-  select.addEventListener("change", () => {
-    const selected = select.options[select.selectedIndex];
-    const amountField = document.getElementById("entryAmount");
-    if (selected && selected.dataset.amount) {
+function handleInvoiceSelectionChange() {
+  const select = document.getElementById("entryInvoice");
+  const amountField = document.getElementById("entryAmount");
+  const propertySelect = document.getElementById("entryProperty");
+  if (!select || !amountField) return;
+
+  const selected = select.options[select.selectedIndex];
+  const selectedInvoiceId = select.value ? parseInt(select.value) : null;
+  const selectedInvoice = selectedInvoiceId
+    ? unpaidInvoices.find((inv) => inv.id === selectedInvoiceId)
+    : null;
+  const currentAmount = amountField.value.trim();
+  const hasEnteredAmount =
+    currentAmount !== "" && parseFloat(currentAmount) > 0;
+
+  // Only suggest the invoice remaining balance when amount is empty or has not been manually edited.
+  if (selected && selected.dataset.amount) {
+    if (!amountManuallyEdited || !hasEnteredAmount) {
       amountField.value = parseFloat(selected.dataset.amount).toFixed(2);
-    } else if (selected && !selected.dataset.amount) {
+      amountManuallyEdited = false;
+    }
+  } else if (!selected || !selected.dataset.amount) {
+    if (!amountManuallyEdited) {
       amountField.value = "";
     }
-  });
+  }
+
+  // Keep property aligned with selected invoice so owner/property context is accurate.
+  if (
+    propertySelect &&
+    selectedInvoice &&
+    selectedInvoice.property_id &&
+    propertySelect.value !== String(selectedInvoice.property_id)
+  ) {
+    propertySelect.value = String(selectedInvoice.property_id);
+  }
 }
 
 async function submitTransaction(e) {
@@ -494,7 +534,31 @@ async function submitTransaction(e) {
     ? parseInt(document.getElementById("entryInvoice").value)
     : null;
 
-  if (!owner_id || !amount) {
+  const selectedInvoice = invoice_id
+    ? unpaidInvoices.find((inv) => inv.id === invoice_id)
+    : null;
+  const resolvedPropertyId =
+    property_id || selectedInvoice?.property_id || null;
+  const resolvedOwnerId = owner_id || selectedInvoice?.owner_id || null;
+
+  if (!amount) {
+    showMessage("Amount is required", "error");
+    return;
+  }
+
+  if (currentType === "rent") {
+    if (!property_id) {
+      showMessage(
+        "Property is required before applying to an invoice",
+        "error",
+      );
+      return;
+    }
+    if (!resolvedOwnerId) {
+      showMessage("Unable to determine owner for selected property", "error");
+      return;
+    }
+  } else if (!owner_id || !property_id) {
     showMessage("Property and Amount are required", "error");
     return;
   }
@@ -509,8 +573,8 @@ async function submitTransaction(e) {
   if (currentType === "distribution") {
     pendingDistribution = {
       amount,
-      owner_id,
-      property_id,
+      owner_id: resolvedOwnerId,
+      property_id: resolvedPropertyId,
       memo,
       date,
     };
@@ -528,7 +592,7 @@ async function submitTransaction(e) {
       payload.vendor_id = vendor_id;
     }
 
-    // Include invoice_id for rent — backend marks it paid atomically
+    // Include invoice_id for rent — backend applies payment and reconciles invoice status.
     if (currentType === "rent" && invoice_id) {
       payload.invoice_id = invoice_id;
     }
@@ -587,6 +651,7 @@ async function submitTransaction(e) {
     }
 
     document.getElementById("entryForm").reset();
+    amountManuallyEdited = false;
     setTodayDate();
     await loadTransactions();
     updateQuickBalances();

@@ -66,9 +66,9 @@ app.use(
 );
 app.use(express.json());
 
-// Redirect root requests to the projects page when no index exists
+// Redirect root requests to the transactions page
 app.get(["/", "/index.html"], (req, res) => {
-  res.redirect(302, "/projects.html");
+  res.redirect(302, "/transactions.html");
 });
 
 // IP-to-User Mapping removed: authentication will rely on session or explicit dev default.

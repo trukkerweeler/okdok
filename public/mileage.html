@@ -32,9 +32,9 @@
       <!-- Instruction Note -->
       <div class="alert alert-info mb-4" role="alert">
         <strong>💡 Tip:</strong> Record each leg of your trip separately. For
-        example, if you travel from Home → Property A → Property B → Home, log
-        this as three separate entries (Home to Property A, Property A to
-        Property B, Property B to Home).
+        example, if you travel from Office → Property A → Property B → Office,
+        log this as three separate entries (Office to Property A, Property A to
+        Property B, Property B to Office).
       </div>
 
       <!-- Add Mileage Dialog -->
@@ -322,18 +322,38 @@
         </form>
       </dialog>
 
+      <!-- Year Filter & Tax Report -->
+      <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+        <div class="d-flex align-items-center gap-2">
+          <label for="yearFilter" class="form-label mb-0 fw-semibold"
+            >Tax Year:</label
+          >
+          <select
+            id="yearFilter"
+            class="form-select form-select-sm"
+            style="width: auto"
+          ></select>
+        </div>
+        <button
+          class="btn btn-outline-secondary btn-sm"
+          id="printTaxSummaryBtn"
+        >
+          &#128424; Print Tax Summary
+        </button>
+      </div>
+
       <!-- Statistics Section -->
-      <div class="row mb-4 mt-4">
+      <div class="row mb-4">
         <div class="col-md-3">
           <div class="card p-3 text-center">
-            <div class="small text-muted">This Month</div>
+            <div class="small text-muted">Tax Year</div>
             <div class="h4 mb-0" id="thisMonthMiles">0.0</div>
             <div class="small text-muted">Miles</div>
           </div>
         </div>
         <div class="col-md-3">
           <div class="card p-3 text-center">
-            <div class="small text-muted">This Month</div>
+            <div class="small text-muted">Tax Year</div>
             <div class="h4 mb-0" id="thisMonthTrips">0</div>
             <div class="small text-muted">Trips</div>
           </div>
@@ -342,7 +362,9 @@
           <div class="card p-3 text-center">
             <div class="small text-muted">Tax Deduction</div>
             <div class="h4 mb-0" id="taxDeduction">$0.00</div>
-            <div class="small text-muted">2026 Rate: $0.725/mi</div>
+            <div class="small text-muted" id="taxRateLabel">
+              2026 Rate: $0.725/mi
+            </div>
           </div>
         </div>
         <div class="col-md-3">

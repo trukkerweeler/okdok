@@ -42,6 +42,65 @@ const companySettingsRepository = require("../repositories/companySettingsReposi
 const ledgerService = require("../services/ledgerService");
 const db = require("../repositories/db");
 
+async function reconcileInvoiceStatusByBalance(invoiceId, connection = null) {
+  const queryFn = connection
+    ? (sql, params) => db.queryInTransaction(connection, sql, params)
+    : (sql, params) => db.query(sql, params);
+
+  const rows = await queryFn(
+    `SELECT
+       i.id,
+       i.status,
+       i.amount,
+       COALESCE(SUM(p.amount_paid), 0) as total_paid,
+       (i.amount - COALESCE(SUM(p.amount_paid), 0)) as balance
+     FROM invoices i
+     LEFT JOIN invoice_payments p ON i.id = p.invoice_id
+     WHERE i.id = ?
+     GROUP BY i.id`,
+    [invoiceId],
+  );
+
+  const invoice = rows[0] || null;
+  if (!invoice) {
+    return null;
+  }
+
+  const balance = parseFloat(invoice.balance);
+  const previousStatus = invoice.status;
+
+  // Never override manually cancelled invoices.
+  if (previousStatus === "cancelled") {
+    return {
+      invoiceId,
+      status: previousStatus,
+      previousStatus,
+      balance,
+      updated: false,
+      transitionedToPaid: false,
+    };
+  }
+
+  const nextStatus = balance <= 0 ? "paid" : "pending";
+  const updated = previousStatus !== nextStatus;
+
+  if (updated) {
+    await queryFn(
+      "UPDATE invoices SET status = ?, updated_at = NOW() WHERE id = ?",
+      [nextStatus, invoiceId],
+    );
+  }
+
+  return {
+    invoiceId,
+    status: nextStatus,
+    previousStatus,
+    balance,
+    updated,
+    transitionedToPaid: nextStatus === "paid" && previousStatus !== "paid",
+  };
+}
+
 // ===================================================
 // OWNER ENDPOINTS
 // ===================================================
@@ -571,7 +630,7 @@ router.get("/ledger/account/:account_id", async (req, res) => {
 /**
  * POST /rent/collect - Record rent collection
  * Debit: Trust Cash, Credit: Rent Income
- * Optionally marks an invoice as paid in the same transaction
+ * Reconciles invoice status against remaining balance in the same transaction
  */
 router.post("/rent/collect", async (req, res) => {
   try {
@@ -594,17 +653,13 @@ router.post("/rent/collect", async (req, res) => {
     }
 
     if (invoice_id) {
-      // Verify invoice exists and get current balance before the transaction
+      // Verify invoice exists before the transaction
       const invoice = await invoiceRepository.getById(invoice_id);
       if (!invoice) {
         return res.status(404).json({ error: "Invoice not found" });
       }
-      const balanceData = await paymentRepository.getInvoiceBalance(invoice_id);
-      const remainingBalance = balanceData
-        ? parseFloat(balanceData.balance)
-        : parseFloat(invoice.amount);
 
-      // Atomic: post ledger entry + record payment + conditionally mark invoice paid
+      // Atomic: post ledger entry + record payment + reconcile invoice status
       const entry = await db.transaction(async (connection) => {
         const insertSql = `
           INSERT INTO ledger_entries
@@ -631,14 +686,10 @@ router.post("/rent/collect", async (req, res) => {
           [invoice_id, date, amount, memo || null],
         );
 
-        // Only mark as paid if this payment covers the remaining balance
-        if (parseFloat(amount) >= remainingBalance) {
-          await db.queryInTransaction(
-            connection,
-            "UPDATE invoices SET status = 'paid', updated_at = NOW() WHERE id = ?",
-            [invoice_id],
-          );
-        }
+        const statusResult = await reconcileInvoiceStatusByBalance(
+          invoice_id,
+          connection,
+        );
 
         return {
           id: result.insertId,
@@ -651,7 +702,7 @@ router.post("/rent/collect", async (req, res) => {
           owner_id: owner_id || null,
           tenant_id: tenant_id || null,
           invoice_id,
-          isFullyPaid: parseFloat(amount) >= remainingBalance,
+          isFullyPaid: statusResult?.status === "paid",
         };
       });
 
@@ -768,8 +819,17 @@ router.post("/expenses/owner", async (req, res) => {
  */
 router.post("/distributions/owner", async (req, res) => {
   try {
-    const { amount, owner_id, property_id, memo, date, expense_ids, fee_ids } =
-      req.body;
+    const {
+      amount,
+      owner_id,
+      property_id,
+      memo,
+      date,
+      expense_ids,
+      fee_ids,
+      management_fee,
+      management_fee_memo,
+    } = req.body;
 
     let ownerEquityAccount = await accountRepository.getByName("Owner Equity");
     if (!ownerEquityAccount) {
@@ -783,6 +843,19 @@ router.post("/distributions/owner", async (req, res) => {
       return res
         .status(400)
         .json({ error: "Trust Cash Account not found. Run seed script." });
+    }
+
+    // Look up management fee account if providing an inline fee
+    let managementFeeAccount = null;
+    if (management_fee && parseFloat(management_fee) > 0) {
+      managementFeeAccount = await accountRepository.getByName(
+        "Management Fee Income",
+      );
+      if (!managementFeeAccount) {
+        return res.status(400).json({
+          error: "Management Fee Income account not found. Run seed script.",
+        });
+      }
     }
 
     // Wrap entire distribution operation in transaction
@@ -818,6 +891,18 @@ router.post("/distributions/owner", async (req, res) => {
       );
 
       let distributionAmount = parseFloat(amount);
+
+      // Deduct inline management fee if provided directly on the distribution
+      if (management_fee && parseFloat(management_fee) > 0) {
+        const feeCents = Math.round(parseFloat(management_fee) * 100);
+        const distCents = Math.round(distributionAmount * 100);
+        distributionAmount = (distCents - feeCents) / 100;
+        if (distributionAmount <= 0) {
+          throw new Error(
+            "Distribution amount must exceed the management fee.",
+          );
+        }
+      }
 
       // Validate and deduct selected expenses
       if (expense_ids && expense_ids.length > 0) {
@@ -956,6 +1041,45 @@ router.post("/distributions/owner", async (req, res) => {
             "UPDATE ledger_entries SET reimbursement_status = 'reimbursed' WHERE id = ?";
           await db.queryInTransaction(connection, updateFeeSql, [fee_id]);
         }
+      }
+
+      // Auto-create and link inline management fee if provided
+      if (
+        management_fee &&
+        parseFloat(management_fee) > 0 &&
+        managementFeeAccount
+      ) {
+        const autoFeeInsertSql = `
+          INSERT INTO ledger_entries 
+          (date, debit_account_id, credit_account_id, amount, memo, property_id, owner_id, created_at) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+        `;
+        const autoFeeResult = await db.queryInTransaction(
+          connection,
+          autoFeeInsertSql,
+          [
+            date,
+            ownerEquityAccount.id,
+            managementFeeAccount.id,
+            parseFloat(management_fee),
+            management_fee_memo || `Management fee for property ${property_id}`,
+            property_id || null,
+            owner_id || null,
+          ],
+        );
+        const autoFeeId = autoFeeResult.insertId;
+
+        await db.queryInTransaction(
+          connection,
+          `INSERT INTO distribution_fees (distribution_id, fee_id, amount) VALUES (?, ?, ?)`,
+          [distributionId, autoFeeId, parseFloat(management_fee)],
+        );
+
+        await db.queryInTransaction(
+          connection,
+          `UPDATE ledger_entries SET reimbursement_status = 'reimbursed' WHERE id = ?`,
+          [autoFeeId],
+        );
       }
 
       // Return created entry
@@ -1582,29 +1706,11 @@ router.post("/payments", async (req, res) => {
       transaction_type: transaction_type || "tenant_to_manager",
     });
 
-    // Post to ledger if amount paid matches or exceeds invoice amount
-    const balance = await paymentRepository.getInvoiceBalance(invoice_id);
-    if (balance && balance.balance <= 0) {
-      // Invoice is fully paid - update status and post to ledger
-      try {
-        // Update invoice status to "paid"
-        await invoiceRepository.update(invoice_id, {
-          property_id: invoice.property_id,
-          lease_id: invoice.lease_id,
-          owner_id: invoice.owner_id,
-          invoice_number: invoice.invoice_number,
-          amount: invoice.amount,
-          invoice_date: invoice.invoice_date,
-          due_date: invoice.due_date,
-          description: invoice.description,
-          status: "paid",
-          notes: invoice.notes,
-        });
-      } catch (statusError) {
-        console.error("Warning: Could not update invoice status:", statusError);
-        // Don't fail the payment if status update fails
-      }
+    // Reconcile invoice status based on remaining balance after payment.
+    const statusResult = await reconcileInvoiceStatusByBalance(invoice_id);
 
+    // Post to ledger if amount paid matches or exceeds invoice amount
+    if (statusResult && statusResult.transitionedToPaid) {
       try {
         let trustAccount =
           await accountRepository.getByName("Trust Cash Account");
@@ -1626,7 +1732,7 @@ router.post("/payments", async (req, res) => {
             await ledgerService.postTransaction({
               debit_account_id: trustAccount.id,
               credit_account_id: incomeAccount.id,
-              amount: balance.invoice_amount,
+              amount: parseFloat(invoice.amount),
               memo: `Payment received for invoice ${invoice.invoice_number}`,
               property_id: invoice.property_id,
               owner_id: invoice.owner_id,
@@ -1665,6 +1771,13 @@ router.put("/payments/:id", async (req, res) => {
       transaction_type,
     } = req.body;
 
+    const existingPayment = await paymentRepository.getById(req.params.id);
+    if (!existingPayment) {
+      return res.status(404).json({ error: "Payment not found" });
+    }
+
+    const previousInvoiceId = existingPayment.invoice_id;
+
     const payment = await paymentRepository.update(req.params.id, {
       invoice_id,
       payment_date,
@@ -1675,28 +1788,19 @@ router.put("/payments/:id", async (req, res) => {
       transaction_type: transaction_type || "tenant_to_manager",
     });
 
-    // Update invoice status if it's fully paid
+    // Reconcile invoice statuses after update.
     try {
-      const balance = await paymentRepository.getInvoiceBalance(invoice_id);
-      if (balance && balance.balance <= 0) {
-        const invoice = await invoiceRepository.getById(invoice_id);
-        if (invoice) {
-          await invoiceRepository.update(invoice_id, {
-            property_id: invoice.property_id,
-            lease_id: invoice.lease_id,
-            owner_id: invoice.owner_id,
-            invoice_number: invoice.invoice_number,
-            amount: invoice.amount,
-            invoice_date: invoice.invoice_date,
-            due_date: invoice.due_date,
-            description: invoice.description,
-            status: "paid",
-            notes: invoice.notes,
-          });
-        }
+      if (previousInvoiceId && previousInvoiceId !== invoice_id) {
+        await reconcileInvoiceStatusByBalance(previousInvoiceId);
+      }
+      if (invoice_id) {
+        await reconcileInvoiceStatusByBalance(invoice_id);
       }
     } catch (statusError) {
-      console.error("Warning: Could not update invoice status:", statusError);
+      console.error(
+        "Warning: Could not reconcile invoice status after payment update:",
+        statusError,
+      );
       // Don't fail the payment update if status update fails
     }
 
@@ -1720,29 +1824,12 @@ router.delete("/payments/:id", async (req, res) => {
     // Update invoice status if needed
     if (payment && payment.invoice_id) {
       try {
-        const balance = await paymentRepository.getInvoiceBalance(
-          payment.invoice_id,
-        );
-        if (balance && balance.balance > 0) {
-          // Invoice is no longer fully paid
-          const invoice = await invoiceRepository.getById(payment.invoice_id);
-          if (invoice) {
-            await invoiceRepository.update(payment.invoice_id, {
-              property_id: invoice.property_id,
-              lease_id: invoice.lease_id,
-              owner_id: invoice.owner_id,
-              invoice_number: invoice.invoice_number,
-              amount: invoice.amount,
-              invoice_date: invoice.invoice_date,
-              due_date: invoice.due_date,
-              description: invoice.description,
-              status: "pending",
-              notes: invoice.notes,
-            });
-          }
-        }
+        await reconcileInvoiceStatusByBalance(payment.invoice_id);
       } catch (statusError) {
-        console.error("Warning: Could not update invoice status:", statusError);
+        console.error(
+          "Warning: Could not reconcile invoice status after payment delete:",
+          statusError,
+        );
         // Don't fail the delete if status update fails
       }
     }
@@ -2569,6 +2656,226 @@ router.delete("/receipts/:receipt_id", async (req, res) => {
     res.status(204).send();
   } catch (error) {
     console.error("Error deleting receipt:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===================================================
+// PM COMPANY INCOME SUMMARY ENDPOINT
+// ===================================================
+
+/**
+ * GET /pm/income-summary - PM company P&L summary
+ * @query start_date - Start date (YYYY-MM-DD), defaults to current year start
+ * @query end_date - End date (YYYY-MM-DD), defaults to current year end
+ */
+router.get("/pm/income-summary", async (req, res) => {
+  try {
+    const now = new Date();
+    const year = now.getFullYear();
+    const startDate = req.query.start_date || `${year}-01-01`;
+    const endDate = req.query.end_date || `${year}-12-31`;
+
+    // Run all queries in parallel
+    const [
+      feeEntries,
+      expenseEntries,
+      feeMonthly,
+      expenseMonthly,
+      mileageEntries,
+      mileageMonthly,
+      rateRows,
+    ] = await Promise.all([
+      // Management fee income entries
+      db.query(
+        `SELECT 
+          le.id, le.date, le.amount, le.memo, le.property_id, le.owner_id,
+          CONCAT(p.address, ', ', p.city) AS property_address,
+          o.name AS owner_name
+        FROM ledger_entries le
+        JOIN accounts a ON le.credit_account_id = a.id
+        LEFT JOIN properties p ON le.property_id = p.id
+        LEFT JOIN owners o ON le.owner_id = o.id
+        WHERE a.name = 'Management Fee Income'
+          AND le.date >= ? AND le.date <= ?
+        ORDER BY le.date DESC`,
+        [startDate, endDate],
+      ),
+      // PM operating expense entries (ledger)
+      db.query(
+        `SELECT 
+          le.id, le.date, le.amount, le.memo, le.vendor_id,
+          v.name AS vendor_name
+        FROM ledger_entries le
+        JOIN accounts a ON le.debit_account_id = a.id
+        LEFT JOIN vendors v ON le.vendor_id = v.id
+        WHERE a.name = 'PM Operating Expense'
+          AND le.date >= ? AND le.date <= ?
+        ORDER BY le.date DESC`,
+        [startDate, endDate],
+      ),
+      // Monthly fees
+      db.query(
+        `SELECT YEAR(le.date) AS year, MONTH(le.date) AS month, SUM(le.amount) AS fee_income
+        FROM ledger_entries le
+        JOIN accounts a ON le.credit_account_id = a.id
+        WHERE a.name = 'Management Fee Income'
+          AND le.date >= ? AND le.date <= ?
+        GROUP BY YEAR(le.date), MONTH(le.date)`,
+        [startDate, endDate],
+      ),
+      // Monthly PM expenses
+      db.query(
+        `SELECT YEAR(le.date) AS year, MONTH(le.date) AS month, SUM(le.amount) AS pm_expenses
+        FROM ledger_entries le
+        JOIN accounts a ON le.debit_account_id = a.id
+        WHERE a.name = 'PM Operating Expense'
+          AND le.date >= ? AND le.date <= ?
+        GROUP BY YEAR(le.date), MONTH(le.date)`,
+        [startDate, endDate],
+      ),
+      // Mileage entries (individual)
+      db.query(
+        `SELECT 
+          m.id, m.date, m.miles_driven, m.purpose, m.category,
+          m.starting_location, m.ending_location, m.notes,
+          YEAR(m.date) AS year,
+          CONCAT(p.address, ', ', p.city) AS property_address,
+          o.name AS owner_name
+        FROM mileage_log m
+        LEFT JOIN properties p ON m.property_id = p.id
+        LEFT JOIN owners o ON m.owner_id = o.id
+        WHERE m.date >= ? AND m.date <= ?
+        ORDER BY m.date DESC`,
+        [startDate, endDate],
+      ),
+      // Monthly mileage aggregates
+      db.query(
+        `SELECT YEAR(m.date) AS year, MONTH(m.date) AS month, SUM(m.miles_driven) AS total_miles
+        FROM mileage_log m
+        WHERE m.date >= ? AND m.date <= ?
+        GROUP BY YEAR(m.date), MONTH(m.date)`,
+        [startDate, endDate],
+      ),
+      // Mileage rates from settings
+      db.query(
+        `SELECT setting_key, setting_value FROM company_settings WHERE setting_key LIKE 'mileage_rate_%'`,
+      ),
+    ]);
+
+    // Build mileage rate lookup (per year)
+    const defaultRates = {
+      2022: 0.585,
+      2023: 0.655,
+      2024: 0.67,
+      2025: 0.7,
+      2026: 0.725,
+    };
+    const mileageRates = { ...defaultRates };
+    rateRows.forEach(({ setting_key, setting_value }) => {
+      const m = setting_key.match(/^mileage_rate_(\d{4})$/);
+      if (m) mileageRates[parseInt(m[1])] = parseFloat(setting_value);
+    });
+    const sortedRateYears = Object.keys(mileageRates).map(Number).sort();
+    const getRateForYear = (y) =>
+      mileageRates[y] ??
+      mileageRates[sortedRateYears[sortedRateYears.length - 1]];
+
+    // Attach calculated dollar value to each mileage entry
+    const mileageEntriesWithValue = mileageEntries.map((e) => {
+      const miles = parseFloat(e.miles_driven) || 0;
+      const rate = getRateForYear(e.year);
+      return {
+        ...e,
+        rate_used: rate,
+        calculated_value: Math.round(miles * rate * 100) / 100,
+      };
+    });
+
+    // Build monthly breakdown map
+    const monthlyMap = {};
+    const ensureMonth = (y, m) => {
+      const key = `${y}-${String(m).padStart(2, "0")}`;
+      if (!monthlyMap[key])
+        monthlyMap[key] = {
+          year: y,
+          month: m,
+          fee_income: 0,
+          pm_expenses: 0,
+          mileage_expense: 0,
+        };
+      return key;
+    };
+
+    feeMonthly.forEach(({ year: y, month: m, fee_income }) => {
+      monthlyMap[ensureMonth(y, m)].fee_income = parseFloat(fee_income) || 0;
+    });
+    expenseMonthly.forEach(({ year: y, month: m, pm_expenses }) => {
+      monthlyMap[ensureMonth(y, m)].pm_expenses = parseFloat(pm_expenses) || 0;
+    });
+    mileageMonthly.forEach(({ year: y, month: m, total_miles }) => {
+      const miles = parseFloat(total_miles) || 0;
+      const rate = getRateForYear(y);
+      monthlyMap[ensureMonth(y, m)].mileage_expense =
+        Math.round(miles * rate * 100) / 100;
+    });
+
+    const monthNames = [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December",
+    ];
+    const monthlyBreakdown = Object.values(monthlyMap)
+      .map((m) => ({
+        ...m,
+        month_name: monthNames[m.month - 1],
+        net:
+          Math.round((m.fee_income - m.pm_expenses - m.mileage_expense) * 100) /
+          100,
+      }))
+      .sort((a, b) =>
+        a.year !== b.year ? a.year - b.year : a.month - b.month,
+      );
+
+    const totalFeeIncome = feeEntries.reduce(
+      (s, e) => s + parseFloat(e.amount),
+      0,
+    );
+    const totalPmExpenses = expenseEntries.reduce(
+      (s, e) => s + parseFloat(e.amount),
+      0,
+    );
+    const totalMileage = mileageEntriesWithValue.reduce(
+      (s, e) => s + e.calculated_value,
+      0,
+    );
+
+    res.json({
+      period: { start_date: startDate, end_date: endDate },
+      totals: {
+        management_fee_income: Math.round(totalFeeIncome * 100) / 100,
+        pm_operating_expenses: Math.round(totalPmExpenses * 100) / 100,
+        mileage_expense: Math.round(totalMileage * 100) / 100,
+        net_income:
+          Math.round((totalFeeIncome - totalPmExpenses - totalMileage) * 100) /
+          100,
+      },
+      monthly_breakdown: monthlyBreakdown,
+      fee_entries: feeEntries,
+      expense_entries: expenseEntries,
+      mileage_entries: mileageEntriesWithValue,
+    });
+  } catch (error) {
+    console.error("Error fetching PM income summary:", error);
     res.status(500).json({ error: error.message });
   }
 });

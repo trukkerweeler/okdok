@@ -72,14 +72,34 @@ function setupEventListeners() {
 
 async function loadReferenceData() {
   try {
-    // Load invoices with pending/sent status
+    // Load invoices and keep only those with actual positive remaining balance.
     const response = await fetch(invoicesUrl, {
       credentials: "include",
     });
     if (response.ok) {
       const allInvoices = await response.json();
-      // Filter to unpaid invoices
-      invoices = allInvoices.filter((inv) => inv.status !== "cancelled");
+
+      const candidateInvoices = allInvoices.filter(
+        (inv) => inv.status !== "cancelled",
+      );
+
+      const balanceResults = await Promise.all(
+        candidateInvoices.map((inv) =>
+          fetch(`${balanceUrl}/${inv.id}`, {
+            credentials: "include",
+          })
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null),
+        ),
+      );
+
+      invoices = candidateInvoices
+        .map((inv, i) => ({
+          ...inv,
+          remaining_balance: balanceResults[i]?.balance ?? inv.amount,
+        }))
+        .filter((inv) => parseFloat(inv.remaining_balance) > 0);
+
       populateInvoiceDropdown();
     }
   } catch (error) {
@@ -95,7 +115,10 @@ function populateInvoiceDropdown() {
   invoices.forEach((invoice) => {
     const option = document.createElement("option");
     option.value = invoice.id;
-    option.textContent = `${invoice.invoice_number} - ${invoice.owner_name} - $${parseFloat(invoice.amount).toFixed(2)}`;
+    const remaining = parseFloat(
+      invoice.remaining_balance ?? invoice.amount,
+    ).toFixed(2);
+    option.textContent = `${invoice.invoice_number} - ${invoice.owner_name} - $${remaining} remaining`;
     select.appendChild(option);
   });
 }

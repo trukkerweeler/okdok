@@ -68,6 +68,14 @@ const seedAccounts = async () => {
         type: "liability",
         name: "PM Operating Receivable",
       },
+
+      // PM Company Operating Expenses (non-reimbursable PM company costs)
+      {
+        owner_id: null,
+        property_id: null,
+        type: "expense",
+        name: "PM Operating Expense",
+      },
     ];
 
     let createdCount = 0;

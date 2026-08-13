@@ -50,6 +50,13 @@ function setupEventListeners() {
   if (addCategoryForm) {
     addCategoryForm.addEventListener("submit", handleAddCategory);
   }
+
+  // Setup Mileage Rates
+  loadMileageRates();
+  const addRateForm = document.getElementById("addMileageRateForm");
+  if (addRateForm) {
+    addRateForm.addEventListener("submit", handleAddMileageRate);
+  }
 }
 
 /**
@@ -327,6 +334,162 @@ function escapeHtml(text) {
   };
   return text.replace(/[&<>"']/g, (m) => map[m]);
 }
+
+// ===================================================
+// MILEAGE RATES MANAGEMENT
+// ===================================================
+
+// Hardcoded defaults shown when no DB value exists yet
+const DEFAULT_MILEAGE_RATES = {
+  2022: 0.585,
+  2023: 0.655,
+  2024: 0.67,
+  2025: 0.7,
+  2026: 0.725,
+};
+
+async function loadMileageRates() {
+  try {
+    const response = await fetch("/accounting/company-settings");
+    if (!response.ok) throw new Error("Error loading settings");
+    const settings = await response.json();
+
+    // Extract mileage_rate_YYYY keys from DB
+    const dbRates = {};
+    Object.entries(settings).forEach(([key, value]) => {
+      const match = key.match(/^mileage_rate_(\d{4})$/);
+      if (match) dbRates[parseInt(match[1])] = parseFloat(value);
+    });
+
+    // Merge: DB values take precedence over defaults
+    const allRates = { ...DEFAULT_MILEAGE_RATES, ...dbRates };
+    displayMileageRates(allRates, dbRates);
+  } catch (error) {
+    console.error("Error loading mileage rates:", error);
+    displayMileageRates(DEFAULT_MILEAGE_RATES, {});
+  }
+}
+
+function displayMileageRates(rates, dbRates) {
+  const tbody = document.getElementById("mileageRatesTableBody");
+  if (!tbody) return;
+
+  const sorted = Object.entries(rates).sort((a, b) => b[0] - a[0]);
+  const isFromDb = (year) => dbRates.hasOwnProperty(year);
+
+  tbody.innerHTML = sorted
+    .map(
+      ([year, rate]) => `
+    <tr id="rateRow_${year}">
+      <td>${year}</td>
+      <td>
+        <span id="rateDisplay_${year}">$${parseFloat(rate).toFixed(3)}/mi</span>
+        ${!isFromDb(year) ? '<span class="badge bg-secondary ms-2" title="Default value \u2014 not yet saved to DB">default</span>' : ""}
+        <input
+          type="number"
+          id="rateInput_${year}"
+          class="form-control form-control-sm d-none"
+          style="width: 110px; display: inline-block !important"
+          step="0.001"
+          min="0"
+          value="${rate}"
+        />
+      </td>
+      <td>
+        <button class="btn btn-sm btn-outline-secondary" id="editRateBtn_${year}" onclick="editMileageRate(${year})">Edit</button>
+        <button class="btn btn-sm btn-primary d-none" id="saveRateBtn_${year}" onclick="saveMileageRate(${year})">Save</button>
+        <button class="btn btn-sm btn-secondary d-none" id="cancelRateBtn_${year}" onclick="cancelEditRate(${year})">Cancel</button>
+      </td>
+    </tr>
+  `,
+    )
+    .join("");
+}
+
+function editMileageRate(year) {
+  document.getElementById(`rateDisplay_${year}`).classList.add("d-none");
+  document.getElementById(`rateInput_${year}`).classList.remove("d-none");
+  document.getElementById(`editRateBtn_${year}`).classList.add("d-none");
+  document.getElementById(`saveRateBtn_${year}`).classList.remove("d-none");
+  document.getElementById(`cancelRateBtn_${year}`).classList.remove("d-none");
+}
+
+function cancelEditRate(year) {
+  document.getElementById(`rateDisplay_${year}`).classList.remove("d-none");
+  document.getElementById(`rateInput_${year}`).classList.add("d-none");
+  document.getElementById(`editRateBtn_${year}`).classList.remove("d-none");
+  document.getElementById(`saveRateBtn_${year}`).classList.add("d-none");
+  document.getElementById(`cancelRateBtn_${year}`).classList.add("d-none");
+}
+
+async function saveMileageRate(year) {
+  const input = document.getElementById(`rateInput_${year}`);
+  const rate = parseFloat(input.value);
+  if (isNaN(rate) || rate <= 0) {
+    showError("Please enter a valid rate greater than 0");
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `/accounting/company-settings/mileage_rate_${year}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: rate.toFixed(3) }),
+      },
+    );
+    if (!response.ok) throw new Error("Error saving rate");
+
+    showSuccess(`Rate for ${year} saved: $${rate.toFixed(3)}/mi`);
+    setTimeout(
+      () => (document.getElementById("successAlert").style.display = "none"),
+      3000,
+    );
+    await loadMileageRates();
+  } catch (error) {
+    console.error("Error saving mileage rate:", error);
+    showError("Error saving mileage rate. Please try again.");
+  }
+}
+
+async function handleAddMileageRate(e) {
+  e.preventDefault();
+  const year = parseInt(document.getElementById("rateYear").value);
+  const rate = parseFloat(document.getElementById("rateValue").value);
+
+  if (!year || isNaN(rate) || rate <= 0) {
+    showError("Please enter a valid year and rate greater than 0");
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `/accounting/company-settings/mileage_rate_${year}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: rate.toFixed(3) }),
+      },
+    );
+    if (!response.ok) throw new Error("Error saving rate");
+
+    showSuccess(`Rate for ${year} saved: $${rate.toFixed(3)}/mi`);
+    document.getElementById("addMileageRateForm").reset();
+    setTimeout(
+      () => (document.getElementById("successAlert").style.display = "none"),
+      3000,
+    );
+    await loadMileageRates();
+  } catch (error) {
+    console.error("Error adding mileage rate:", error);
+    showError("Error saving mileage rate. Please try again.");
+  }
+}
+
+window.editMileageRate = editMileageRate;
+window.cancelEditRate = cancelEditRate;
+window.saveMileageRate = saveMileageRate;
 
 // ===================================================
 

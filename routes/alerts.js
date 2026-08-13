@@ -18,6 +18,13 @@ router.get("/", async (req, res) => {
   }
 });
 
+// GET /alerts/smtp-status - check whether SMTP env vars are configured
+router.get("/smtp-status", (req, res) => {
+  const required = ["SMTP_HOST", "SMTP_USER", "SMTP_PASS"];
+  const missing = required.filter((k) => !process.env[k]);
+  res.json({ configured: missing.length === 0, missing });
+});
+
 // GET /alerts/carriers - list supported carriers
 router.get("/carriers", (req, res) => {
   const carriers = Object.keys(CARRIER_GATEWAYS).map((key) => ({
@@ -122,6 +129,7 @@ router.post("/:id/send", async (req, res) => {
     if (!alert) return res.status(404).json({ error: "Alert not found" });
 
     await sendAlert(alert);
+    await alertsRepository.markSent(alert.id);
     res.json({ success: true, message: `Alert "${alert.name}" sent.` });
   } catch (error) {
     console.error("Error sending alert:", error);

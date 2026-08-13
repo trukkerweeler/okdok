@@ -101,6 +101,14 @@ const pmExpensesRepository = {
   },
 
   /**
+   * Link a ledger entry to a PM expense (set after auto-posting to ledger)
+   */
+  setLedgerEntryId: async (id, ledger_entry_id) => {
+    const sql = "UPDATE pm_expenses SET ledger_entry_id = ? WHERE id = ?";
+    await db.query(sql, [ledger_entry_id, id]);
+  },
+
+  /**
    * Get summary stats
    */
   getSummary: async (year, month = null) => {

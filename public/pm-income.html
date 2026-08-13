@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="PM company income and expense summary - management fees vs operating costs."
+    />
+    <meta name="author" content="OKDOK Accounting" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Abel&family=Tapestry&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+    />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="icon" href="images/okdok.png" />
+    <title>PM Income Summary - Accounting</title>
+    <style>
+      .pm-income-page {
+        background-color: #f8f9fa;
+      }
+
+      .income-container {
+        padding: 20px;
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+
+      /* Metric Cards */
+      .metrics-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+
+      .metric-card {
+        background: white;
+        border-radius: 8px;
+        padding: 20px 24px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        text-align: center;
+      }
+
+      .metric-label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: #888;
+        margin-bottom: 8px;
+      }
+
+      .metric-value {
+        font-size: 28px;
+        font-weight: 700;
+        font-family: "Courier New", monospace;
+      }
+
+      .metric-income {
+        color: #28a745;
+      }
+      .metric-expense {
+        color: #dc3545;
+      }
+      .metric-net-positive {
+        color: #28a745;
+      }
+      .metric-net-negative {
+        color: #dc3545;
+      }
+
+      /* Filter bar */
+      .filter-bar {
+        background: white;
+        border-radius: 8px;
+        padding: 14px 20px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        margin-bottom: 24px;
+        display: flex;
+        gap: 12px;
+        align-items: flex-end;
+        flex-wrap: wrap;
+      }
+
+      .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .filter-group label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #666;
+      }
+
+      .filter-group input {
+        font-size: 13px;
+        padding: 6px 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+
+      .btn-filter {
+        padding: 7px 18px;
+        font-size: 13px;
+        font-weight: 600;
+        border: none;
+        border-radius: 4px;
+        background: #0d6efd;
+        color: white;
+        cursor: pointer;
+      }
+
+      .btn-filter:hover {
+        background: #0b5ed7;
+      }
+
+      /* Main panel */
+      .main-panel {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+
+      /* Tabs */
+      .tab-nav {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 16px;
+        border-bottom: 2px solid #eee;
+        padding-bottom: 0;
+      }
+
+      .tab-btn {
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        border: none;
+        background: none;
+        color: #666;
+        cursor: pointer;
+        border-bottom: 3px solid transparent;
+        margin-bottom: -2px;
+        transition: all 0.15s;
+      }
+
+      .tab-btn:hover {
+        color: #333;
+      }
+
+      .tab-btn.active {
+        color: #0d6efd;
+        border-bottom-color: #0d6efd;
+      }
+
+      /* Tables */
+      .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      .data-table thead th {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #888;
+        padding: 8px 10px;
+        border-bottom: 2px solid #eee;
+        text-align: left;
+        background: #fafafa;
+      }
+
+      .data-table tbody td {
+        padding: 9px 10px;
+        border-bottom: 1px solid #f0f0f0;
+        vertical-align: middle;
+      }
+
+      .data-table tbody tr:hover {
+        background: #f9f9f9;
+      }
+
+      .data-table tfoot td {
+        padding: 10px;
+        font-weight: 700;
+        border-top: 2px solid #ddd;
+        background: #f8f9fa;
+      }
+
+      .text-right {
+        text-align: right;
+      }
+      .text-mono {
+        font-family: "Courier New", monospace;
+      }
+      .text-green {
+        color: #28a745;
+      }
+      .text-red {
+        color: #dc3545;
+      }
+      .text-muted {
+        color: #999;
+        font-size: 12px;
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #aaa;
+        font-size: 14px;
+      }
+
+      .error-banner {
+        background: #fee;
+        color: #c33;
+        padding: 10px 14px;
+        border-radius: 4px;
+        margin-bottom: 16px;
+        font-size: 13px;
+      }
+
+      .loading-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #aaa;
+        font-size: 14px;
+      }
+
+      @media (max-width: 768px) {
+        .metrics-row {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body class="pm-income-page">
+    <header id="header"></header>
+
+    <div class="container-fluid" style="padding: 15px">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h3 mb-0">PM Company Income Summary</h1>
+        <small class="text-muted"
+          >Management fees collected vs. PM operating expenses</small
+        >
+      </div>
+    </div>
+
+    <div class="income-container">
+      <!-- Error Banner -->
+      <div id="errorBanner" class="error-banner" style="display: none"></div>
+
+      <!-- Filter Bar -->
+      <div class="filter-bar">
+        <form
+          id="filterForm"
+          style="
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+          "
+        >
+          <div class="filter-group">
+            <label>From</label>
+            <input type="date" id="startDate" />
+          </div>
+          <div class="filter-group">
+            <label>To</label>
+            <input type="date" id="endDate" />
+          </div>
+          <button type="submit" class="btn-filter">Apply</button>
+          <button
+            type="button"
+            id="btnCurrentYear"
+            class="btn-filter"
+            style="background: #6c757d"
+          >
+            This Year
+          </button>
+          <button
+            type="button"
+            id="btnLastYear"
+            class="btn-filter"
+            style="background: #6c757d"
+          >
+            Last Year
+          </button>
+        </form>
+      </div>
+
+      <!-- Metric Cards -->
+      <div class="metrics-row">
+        <div class="metric-card">
+          <div class="metric-label">Management Fee Income</div>
+          <div class="metric-value metric-income" id="metricFees">$—</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">PM Operating Expenses</div>
+          <div class="metric-value metric-expense" id="metricExpenses">$—</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Mileage (IRS rate)</div>
+          <div class="metric-value metric-expense" id="metricMileage">$—</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Net Income</div>
+          <div class="metric-value" id="metricNet">$—</div>
+        </div>
+      </div>
+
+      <!-- Main Panel with Tabs -->
+      <div class="main-panel">
+        <div class="tab-nav">
+          <button class="tab-btn active" data-tab="monthly">
+            Monthly Breakdown
+          </button>
+          <button class="tab-btn" data-tab="fees">Fee Entries</button>
+          <button class="tab-btn" data-tab="expenses">Expense Entries</button>
+          <button class="tab-btn" data-tab="mileage">Mileage</button>
+        </div>
+
+        <!-- Loading -->
+        <div id="loadingState" class="loading-state">Loading...</div>
+
+        <!-- Monthly Breakdown Tab -->
+        <div id="tabMonthly" class="tab-content" style="display: none">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th class="text-right">Fee Income</th>
+                <th class="text-right">PM Expenses</th>
+                <th class="text-right">Mileage</th>
+                <th class="text-right">Net</th>
+              </tr>
+            </thead>
+            <tbody id="monthlyBody"></tbody>
+            <tfoot id="monthlyFoot"></tfoot>
+          </table>
+        </div>
+
+        <!-- Fee Entries Tab -->
+        <div id="tabFees" class="tab-content" style="display: none">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th class="text-right">Amount</th>
+                <th>Owner</th>
+                <th>Property</th>
+                <th>Memo</th>
+              </tr>
+            </thead>
+            <tbody id="feeBody"></tbody>
+          </table>
+        </div>
+
+        <!-- Expense Entries Tab -->
+        <div id="tabExpenses" class="tab-content" style="display: none">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th class="text-right">Amount</th>
+                <th>Vendor</th>
+                <th>Memo</th>
+              </tr>
+            </thead>
+            <tbody id="expenseBody"></tbody>
+          </table>
+        </div>
+        <!-- Mileage Tab -->
+        <div id="tabMileage" class="tab-content" style="display: none">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th class="text-right">Miles</th>
+                <th class="text-right">Rate</th>
+                <th class="text-right">Value</th>
+                <th>Purpose</th>
+                <th>Property / Owner</th>
+              </tr>
+            </thead>
+            <tbody id="mileageBody"></tbody>
+            <tfoot id="mileageFoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <footer id="footer"></footer>
+
+    <script type="module" src="/js/pm-income.mjs"></script>
+  </body>
+</html>

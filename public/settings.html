@@ -271,6 +271,77 @@
           </div>
         </div>
       </div>
+
+      <!-- Mileage Rates Section -->
+      <div class="row mt-4">
+        <div class="col-lg-8">
+          <div class="card">
+            <div class="card-header bg-primary text-white">
+              <h5 class="mb-0">IRS Mileage Rates</h5>
+            </div>
+            <div class="card-body">
+              <p class="text-muted small mb-3">
+                Rates used to calculate tax deductions on the Mileage Tracker
+                page. Update each December when the IRS announces the new rate.
+                <a
+                  href="https://www.irs.gov/tax-professionals/standard-mileage-rates"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >IRS source &#8599;</a
+                >
+              </p>
+              <div class="table-responsive">
+                <table class="table table-sm" id="mileageRatesTable">
+                  <thead>
+                    <tr>
+                      <th>Year</th>
+                      <th>Rate ($/mile)</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mileageRatesTableBody">
+                    <!-- Populated by JavaScript -->
+                  </tbody>
+                </table>
+              </div>
+              <div class="mt-3 pt-3 border-top">
+                <h6>Add / Update Rate</h6>
+                <form id="addMileageRateForm" class="row g-2 align-items-end">
+                  <div class="col-md-3">
+                    <label for="rateYear" class="form-label">Year</label>
+                    <input
+                      type="number"
+                      class="form-control"
+                      id="rateYear"
+                      min="2000"
+                      max="2099"
+                      required
+                    />
+                  </div>
+                  <div class="col-md-4">
+                    <label for="rateValue" class="form-label"
+                      >Rate ($/mile)</label
+                    >
+                    <input
+                      type="number"
+                      class="form-control"
+                      id="rateValue"
+                      step="0.001"
+                      min="0"
+                      required
+                    />
+                  </div>
+                  <div class="col-md-2">
+                    <button type="submit" class="btn btn-sm btn-primary w-100">
+                      Save
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="/js/settings.mjs"></script>
