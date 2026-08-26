@@ -49,6 +49,16 @@
       #invoicesTable tbody .invoice-shade-5:hover td {
         background-color: inherit !important;
       }
+      .line-item-row .line-item-amount {
+        width: 120px;
+        flex-shrink: 0;
+        -moz-appearance: textfield;
+      }
+      .line-item-row .line-item-amount::-webkit-outer-spin-button,
+      .line-item-row .line-item-amount::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
     </style>
   </head>
   <body class="invoices-page">
@@ -127,22 +137,6 @@
             </div>
 
             <div class="col-md-6">
-              <label for="invoiceAmount" class="form-label required"
-                >Amount</label
-              >
-              <input
-                type="number"
-                id="invoiceAmount"
-                name="amount"
-                required
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                class="form-control"
-              />
-            </div>
-
-            <div class="col-md-6">
               <label for="invoiceDate" class="form-label required"
                 >Invoice Date</label
               >
@@ -175,17 +169,39 @@
               </select>
             </div>
 
-            <div class="col-12">
-              <label for="invoiceDescription" class="form-label"
-                >Description</label
+            <div class="col-12" id="lineItemsSection">
+              <label class="form-label required">Line Items</label>
+              <div id="lineItemsContainer"></div>
+              <button
+                type="button"
+                id="addLineItemBtn"
+                class="btn btn-sm btn-outline-secondary mt-1"
               >
-              <input
-                type="text"
-                id="invoiceDescription"
-                name="description"
-                placeholder="e.g., Deposit + First Month Rent"
-                class="form-control"
-              />
+                + Add Line Item
+              </button>
+              <div
+                class="d-flex justify-content-end align-items-center mt-2 pt-2"
+                style="border-top: 2px solid #007bff"
+              >
+                <span class="text-muted me-2" style="font-size: 13px"
+                  >TOTAL</span
+                >
+                <strong
+                  id="lineItemsTotal"
+                  style="
+                    font-size: 1.1em;
+                    color: #007bff;
+                    font-family: monospace;
+                  "
+                  >$0.00</strong
+                >
+                <input
+                  type="hidden"
+                  id="invoiceAmount"
+                  name="amount"
+                  value="0"
+                />
+              </div>
             </div>
 
             <div class="col-12">

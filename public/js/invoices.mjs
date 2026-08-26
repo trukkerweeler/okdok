@@ -78,6 +78,12 @@ function setupEventListeners() {
     ownerSelect.addEventListener("change", updatePropertiesForOwner);
   }
 
+  // Add Line Item button
+  const addLineItemBtn = document.getElementById("addLineItemBtn");
+  if (addLineItemBtn) {
+    addLineItemBtn.addEventListener("click", () => addLineItem());
+  }
+
   // Print dialog
   const closePrintDialog = document.getElementById("closePrintDialog");
   if (closePrintDialog) {
@@ -294,11 +300,8 @@ async function openAddInvoiceDialog() {
       invoiceNumberInput.value = nextNumber;
     }
 
-    // Set default description
-    const descriptionInput = document.getElementById("invoiceDescription");
-    if (descriptionInput) {
-      descriptionInput.value = "Deposit + First Month Rent";
-    }
+    // Initialize line items with one empty row
+    initLineItems();
 
     // Set default status
     const statusSelect = document.getElementById("invoiceStatus");
@@ -330,6 +333,21 @@ async function saveInvoice(event) {
   const form = document.getElementById("addInvoiceForm");
   const formData = new FormData(form);
 
+  const lineItemRows = document.querySelectorAll(".line-item-row");
+  const line_items = [];
+  lineItemRows.forEach((row) => {
+    const desc = row.querySelector(".line-item-desc").value.trim();
+    const amt = parseFloat(row.querySelector(".line-item-amount").value);
+    if (desc && !isNaN(amt) && amt > 0) {
+      line_items.push({ description: desc, amount: amt });
+    }
+  });
+
+  if (line_items.length === 0) {
+    alert("Please add at least one line item with a description and amount.");
+    return;
+  }
+
   try {
     const dataJson = {
       lease_id: formData.get("lease_id")
@@ -340,12 +358,11 @@ async function saveInvoice(event) {
         ? parseInt(formData.get("property_id"))
         : null,
       invoice_number: formData.get("invoice_number"),
-      amount: parseFloat(formData.get("amount")),
       invoice_date: formData.get("invoice_date"),
       due_date: formData.get("due_date") || null,
-      description: formData.get("description"),
       status: formData.get("status"),
       notes: formData.get("notes") || null,
+      line_items,
     };
 
     const response = await fetch(invoicesUrl, {
@@ -548,6 +565,19 @@ async function showPrintDialog(invoiceId) {
       return;
     }
 
+    // Fetch line items for this invoice
+    try {
+      const lineItemsResponse = await fetch(`${invoicesUrl}/${invoiceId}`, {
+        credentials: "include",
+      });
+      if (lineItemsResponse.ok) {
+        const invoiceDetail = await lineItemsResponse.json();
+        invoice.line_items = invoiceDetail.line_items || [];
+      }
+    } catch (error) {
+      console.warn("Could not fetch invoice line items:", error);
+    }
+
     // If invoice has a lease_id, fetch all tenants for that lease
     if (invoice.lease_id) {
       try {
@@ -583,6 +613,45 @@ async function showPrintDialog(invoiceId) {
     console.error("Error showing print dialog:", error);
     alert(`Error: ${error.message}`);
   }
+}
+
+function initLineItems() {
+  const container = document.getElementById("lineItemsContainer");
+  if (container) container.innerHTML = "";
+  addLineItem();
+  recalcLineItemsTotal();
+}
+
+function addLineItem(desc = "", amount = "") {
+  const container = document.getElementById("lineItemsContainer");
+  if (!container) return;
+  const row = document.createElement("div");
+  row.className = "line-item-row d-flex gap-2 align-items-center mb-2";
+  row.innerHTML = `
+    <input type="text" class="form-control form-control-sm line-item-desc" placeholder="Description (e.g., Weekly rent)" value="${escapeHtml(String(desc))}" />
+    <input type="number" class="form-control form-control-sm line-item-amount" placeholder="0.00" step="0.01" min="0" value="${amount}" />
+    <button type="button" class="btn btn-sm btn-outline-danger line-item-remove" title="Remove">✕</button>
+  `;
+  container.appendChild(row);
+  row.querySelector(".line-item-remove").addEventListener("click", () => {
+    row.remove();
+    recalcLineItemsTotal();
+  });
+  row
+    .querySelector(".line-item-amount")
+    .addEventListener("input", recalcLineItemsTotal);
+  return row;
+}
+
+function recalcLineItemsTotal() {
+  let total = 0;
+  document.querySelectorAll(".line-item-row").forEach((row) => {
+    total += parseFloat(row.querySelector(".line-item-amount").value) || 0;
+  });
+  const totalEl = document.getElementById("lineItemsTotal");
+  if (totalEl) totalEl.textContent = formatCurrency(total);
+  const hiddenAmt = document.getElementById("invoiceAmount");
+  if (hiddenAmt) hiddenAmt.value = total.toFixed(2);
 }
 
 function generateInvoiceHTML(invoice, settings = {}) {
@@ -660,10 +729,23 @@ function generateInvoiceHTML(invoice, settings = {}) {
           </tr>
         </thead>
         <tbody>
+          ${
+            invoice.line_items && invoice.line_items.length > 0
+              ? invoice.line_items
+                  .map(
+                    (item) => `
           <tr style="border-bottom: 1px solid #ddd;">
-            <td style="padding: 12px; text-align: left;">${escapeHtml(invoice.description)}</td>
+            <td style="padding: 12px; text-align: left;">${escapeHtml(item.description)}</td>
+            <td style="padding: 12px; text-align: right; font-weight: bold;">${formatCurrency(parseFloat(item.amount))}</td>
+          </tr>`,
+                  )
+                  .join("")
+              : `
+          <tr style="border-bottom: 1px solid #ddd;">
+            <td style="padding: 12px; text-align: left;">${escapeHtml(invoice.description || "")}</td>
             <td style="padding: 12px; text-align: right; font-weight: bold;">${amount}</td>
-          </tr>
+          </tr>`
+          }
         </tbody>
       </table>
 

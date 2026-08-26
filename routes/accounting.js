@@ -1438,6 +1438,7 @@ router.get("/invoices/:id", async (req, res) => {
     if (!invoice) {
       return res.status(404).json({ error: "Invoice not found" });
     }
+    invoice.line_items = await invoiceRepository.getLineItems(req.params.id);
     res.json(invoice);
   } catch (error) {
     console.error("Error fetching invoice:", error);
@@ -1505,16 +1506,79 @@ router.post("/invoices", async (req, res) => {
       description,
       status,
       notes,
+      line_items,
     } = req.body;
 
-    if (!owner_id || !amount) {
+    if (!owner_id) {
+      return res.status(400).json({ error: "owner_id is required" });
+    }
+
+    let computedAmount = amount ? parseFloat(amount) : 0;
+    if (line_items && line_items.length > 0) {
+      for (const item of line_items) {
+        if (!item.description || item.amount == null) {
+          return res
+            .status(400)
+            .json({
+              error: "Each line item requires a description and amount",
+            });
+        }
+      }
+      computedAmount =
+        line_items.reduce(
+          (sum, item) => sum + Math.round(parseFloat(item.amount) * 100),
+          0,
+        ) / 100;
+    }
+
+    if (!computedAmount) {
       return res
         .status(400)
-        .json({ error: "owner_id and amount are required" });
+        .json({ error: "amount or line_items are required" });
     }
 
     const nextInvoiceNumber =
       invoice_number || (await invoiceRepository.getNextInvoiceNumber());
+
+    if (line_items && line_items.length > 0) {
+      const invoiceId = await db.transaction(async (connection) => {
+        const result = await db.queryInTransaction(
+          connection,
+          `INSERT INTO invoices
+           (property_id, lease_id, owner_id, invoice_number, amount, invoice_date, due_date, description, status, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          [
+            property_id || null,
+            lease_id || null,
+            owner_id,
+            nextInvoiceNumber,
+            computedAmount,
+            invoice_date || new Date().toISOString().split("T")[0],
+            due_date || null,
+            description || null,
+            status || "pending",
+            notes || null,
+          ],
+        );
+        const id = result.insertId;
+        for (let i = 0; i < line_items.length; i++) {
+          await db.queryInTransaction(
+            connection,
+            `INSERT INTO invoice_line_items (invoice_id, description, amount, sort_order) VALUES (?, ?, ?, ?)`,
+            [
+              id,
+              line_items[i].description,
+              parseFloat(line_items[i].amount),
+              i,
+            ],
+          );
+        }
+        return id;
+      });
+      const invoice = await invoiceRepository.getById(invoiceId);
+      invoice.line_items = await invoiceRepository.getLineItems(invoiceId);
+      return res.status(201).json(invoice);
+    }
 
     const invoice = await invoiceRepository.create({
       property_id,
@@ -1522,14 +1586,14 @@ router.post("/invoices", async (req, res) => {
       tenant_id,
       owner_id,
       invoice_number: nextInvoiceNumber,
-      amount,
+      amount: computedAmount,
       invoice_date: invoice_date || new Date().toISOString().split("T")[0],
       due_date,
       description: description || "Deposit + First Month Rent",
       status: status || "pending",
       notes,
     });
-
+    invoice.line_items = [];
     res.status(201).json(invoice);
   } catch (error) {
     console.error("Error creating invoice:", error);
@@ -1554,15 +1618,33 @@ router.put("/invoices/:id", async (req, res) => {
       description,
       status,
       notes,
+      line_items,
     } = req.body;
+
+    let computedAmount = amount ? parseFloat(amount) : null;
+    if (line_items && line_items.length > 0) {
+      for (const item of line_items) {
+        if (!item.description || item.amount == null) {
+          return res
+            .status(400)
+            .json({
+              error: "Each line item requires a description and amount",
+            });
+        }
+      }
+      computedAmount =
+        line_items.reduce(
+          (sum, item) => sum + Math.round(parseFloat(item.amount) * 100),
+          0,
+        ) / 100;
+    }
 
     const invoice = await invoiceRepository.update(req.params.id, {
       property_id,
       lease_id,
-      tenant_id,
       owner_id,
       invoice_number,
-      amount,
+      amount: computedAmount,
       invoice_date,
       due_date,
       description,
@@ -1570,6 +1652,11 @@ router.put("/invoices/:id", async (req, res) => {
       notes,
     });
 
+    if (line_items !== undefined) {
+      await invoiceRepository.replaceLineItems(req.params.id, line_items || []);
+    }
+
+    invoice.line_items = await invoiceRepository.getLineItems(req.params.id);
     res.json(invoice);
   } catch (error) {
     console.error("Error updating invoice:", error);

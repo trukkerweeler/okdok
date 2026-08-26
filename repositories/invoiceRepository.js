@@ -200,6 +200,37 @@ const invoiceRepository = {
     return db.query(sql, [id]);
   },
 
+  getLineItems: async (invoice_id) => {
+    return db.query(
+      `SELECT id, invoice_id, description, amount, sort_order
+       FROM invoice_line_items WHERE invoice_id = ? ORDER BY sort_order, id`,
+      [invoice_id],
+    );
+  },
+
+  replaceLineItems: async (invoice_id, items) => {
+    return db.transaction(async (connection) => {
+      await db.queryInTransaction(
+        connection,
+        `DELETE FROM invoice_line_items WHERE invoice_id = ?`,
+        [invoice_id],
+      );
+      for (let i = 0; i < items.length; i++) {
+        await db.queryInTransaction(
+          connection,
+          `INSERT INTO invoice_line_items (invoice_id, description, amount, sort_order) VALUES (?, ?, ?, ?)`,
+          [invoice_id, items[i].description, parseFloat(items[i].amount), i],
+        );
+      }
+      return db.queryInTransaction(
+        connection,
+        `SELECT id, invoice_id, description, amount, sort_order
+         FROM invoice_line_items WHERE invoice_id = ? ORDER BY sort_order, id`,
+        [invoice_id],
+      );
+    });
+  },
+
   /**
    * Get next invoice number (format: YY-XXX where XXX starts at 101)
    */
