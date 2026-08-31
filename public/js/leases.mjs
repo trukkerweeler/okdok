@@ -108,16 +108,9 @@ async function updateLeaseNumber() {
   }
 
   try {
-    // Count leases for this property in current year
     const currentYear = new Date().getFullYear();
-    const propertyLeases = leases.filter(
-      (l) =>
-        l.property_id == propertyId &&
-        new Date(l.lease_start).getFullYear() === currentYear,
-    );
-    const count = propertyLeases.length;
-    const sequenceNumber = 101 + count;
-    const leaseNumber = `${propertyId}-${currentYear}-${String(sequenceNumber).padStart(3, "0")}`;
+    const sequenceNumber = 101 + leases.length;
+    const leaseNumber = `${currentYear}-${String(sequenceNumber).padStart(3, "0")}`;
     document.getElementById("leaseNumber").value = leaseNumber;
   } catch (error) {
     console.error("Error generating lease number:", error);

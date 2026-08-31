@@ -137,9 +137,17 @@
             </div>
 
             <div class="col-md-6">
-              <label for="invoiceDate" class="form-label required"
-                >Invoice Date</label
+              <label
+                for="invoiceDate"
+                class="form-label required d-flex align-items-center gap-2"
               >
+                Invoice Date
+                <span
+                  id="currentWeekBadge"
+                  class="badge bg-secondary fw-normal"
+                  style="font-size: 0.72em"
+                ></span>
+              </label>
               <input
                 type="date"
                 id="invoiceDate"
@@ -206,6 +214,21 @@
 
             <div class="col-12">
               <label for="invoiceNotes" class="form-label">Notes</label>
+              <div
+                id="defaultNoteAlert"
+                class="alert alert-info py-1 px-2 mb-1 d-flex justify-content-between align-items-center d-none"
+                style="font-size: 0.85em"
+              >
+                <span>Default note loaded for this property.</span>
+                <button
+                  type="button"
+                  id="clearDefaultNote"
+                  class="btn btn-sm btn-outline-secondary ms-2"
+                  style="font-size: 0.8em; padding: 1px 6px"
+                >
+                  Clear
+                </button>
+              </div>
               <textarea
                 id="invoiceNotes"
                 name="notes"

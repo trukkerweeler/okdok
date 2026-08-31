@@ -126,6 +126,14 @@ const leaseRepository = {
     return db.query(sql, [lease_id]);
   },
 
+  getAllTenantAssociations: async () => {
+    const sql = `SELECT lt.lease_id, lt.is_primary, t.id, t.name
+                 FROM lease_tenants lt
+                 JOIN tenants t ON lt.tenant_id = t.id
+                 ORDER BY lt.lease_id, lt.is_primary DESC, t.name ASC`;
+    return db.query(sql);
+  },
+
   /**
    * Add tenant to lease
    */
@@ -173,16 +181,15 @@ const leaseRepository = {
   },
 
   /**
-   * Get next lease number for a property (format: PROP-YYYY-XXX)
+   * Get next lease number (format: YYYY-NNN, globally incrementing)
    */
-  getNextLeaseNumber: async (property_id) => {
+  getNextLeaseNumber: async () => {
     const currentYear = new Date().getFullYear();
-    const sql = `SELECT COUNT(*) as count FROM leases 
-                 WHERE property_id = ? AND YEAR(lease_start) = ?`;
-    const results = await db.query(sql, [property_id, currentYear]);
+    const sql = `SELECT COUNT(*) as count FROM leases`;
+    const results = await db.query(sql);
     const count = results[0].count || 0;
     const sequenceNumber = 101 + count;
-    return `${property_id}-${currentYear}-${String(sequenceNumber).padStart(3, "0")}`;
+    return `${currentYear}-${String(sequenceNumber).padStart(3, "0")}`;
   },
 };
 

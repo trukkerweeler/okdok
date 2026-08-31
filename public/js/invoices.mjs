@@ -10,6 +10,7 @@ const ownersUrl = `${apiUrl}/accounting/owners`;
 const propertiesUrl = `${apiUrl}/accounting/properties`;
 const tenantsUrl = `${apiUrl}/accounting/tenants`;
 const leasesUrl = `${apiUrl}/accounting/leases`;
+const propertyNotesUrl = `${apiUrl}/accounting/property-notes`;
 
 let user;
 let owners = [];
@@ -17,6 +18,7 @@ let properties = [];
 let tenants = [];
 let leases = [];
 let invoices = [];
+let leaseTenantMap = new Map(); // lease_id -> [{id, name, is_primary}]
 
 // Initialize handler function
 async function initializeInvoices() {
@@ -112,6 +114,14 @@ function setupEventListeners() {
       }
     });
   }
+
+  const clearDefaultNote = document.getElementById("clearDefaultNote");
+  if (clearDefaultNote) {
+    clearDefaultNote.addEventListener("click", () => {
+      document.getElementById("invoiceNotes").value = "";
+      document.getElementById("defaultNoteAlert").classList.add("d-none");
+    });
+  }
 }
 
 async function loadReferenceData() {
@@ -141,13 +151,25 @@ async function loadReferenceData() {
       tenants = await tenantsResponse.json();
     }
 
-    // Load leases
-    const leasesResponse = await fetch(leasesUrl, {
-      credentials: "include",
-    });
+    // Load leases and their tenant associations in parallel
+    const [leasesResponse, tenantAssocResponse] = await Promise.all([
+      fetch(leasesUrl, { credentials: "include" }),
+      fetch(`${leasesUrl}/tenant-associations`, { credentials: "include" }),
+    ]);
     if (leasesResponse.ok) {
       leases = await leasesResponse.json();
       populateLeaseDropdown();
+    }
+    if (tenantAssocResponse.ok) {
+      const rows = await tenantAssocResponse.json();
+      leaseTenantMap = new Map();
+      rows.forEach((row) => {
+        if (!leaseTenantMap.has(row.lease_id))
+          leaseTenantMap.set(row.lease_id, []);
+        leaseTenantMap
+          .get(row.lease_id)
+          .push({ id: row.id, name: row.name, is_primary: row.is_primary });
+      });
     }
   } catch (error) {
     console.error("Error loading reference data:", error);
@@ -187,9 +209,9 @@ async function updateFieldsForLease() {
   const leaseSelect = document.getElementById("invoiceLease");
   const ownerSelect = document.getElementById("invoiceOwner");
   const propertySelect = document.getElementById("invoiceProperty");
-  const tenantSelect = document.getElementById("invoiceTenant");
+  const tenantSelect = document.getElementById("invoiceTenant"); // optional element
 
-  if (!leaseSelect || !ownerSelect || !propertySelect || !tenantSelect) return;
+  if (!leaseSelect || !ownerSelect || !propertySelect) return;
 
   const leaseId = leaseSelect.value;
 
@@ -198,8 +220,10 @@ async function updateFieldsForLease() {
     ownerSelect.value = "";
     propertySelect.innerHTML =
       '<option value="">Select a property (optional)...</option>';
-    tenantSelect.innerHTML =
-      '<option value="">Select a tenant (optional)...</option>';
+    if (tenantSelect)
+      tenantSelect.innerHTML =
+        '<option value="">Select a tenant (optional)...</option>';
+    clearDefaultNoteUI();
     return;
   }
 
@@ -218,35 +242,51 @@ async function updateFieldsForLease() {
     // Set selected property
     propertySelect.value = selectedLease.property_id;
 
-    // Fetch and populate tenants for this lease
-    try {
-      const response = await fetch(`${leasesUrl}/${leaseId}`, {
-        credentials: "include",
-      });
-      if (response.ok) {
-        const leaseData = await response.json();
-        if (leaseData.tenants && leaseData.tenants.length > 0) {
-          // Populate tenant dropdown with lease tenants
-          tenantSelect.innerHTML = "";
-          leaseData.tenants.forEach((tenant) => {
-            const option = document.createElement("option");
-            option.value = tenant.id;
-            option.textContent = tenant.name;
-            if (tenant.is_primary) {
-              option.textContent += " (Primary)";
-            }
-            tenantSelect.appendChild(option);
-          });
-          // Select the primary tenant if available
-          const primaryTenant = leaseData.tenants.find((t) => t.is_primary);
-          if (primaryTenant) {
-            tenantSelect.value = primaryTenant.id;
-          }
-        }
+    // Populate tenants from the pre-loaded cache — no extra API call
+    if (tenantSelect) {
+      const cachedTenants = leaseTenantMap.get(parseInt(leaseId)) || [];
+      if (cachedTenants.length > 0) {
+        tenantSelect.innerHTML = "";
+        cachedTenants.forEach((tenant) => {
+          const option = document.createElement("option");
+          option.value = tenant.id;
+          option.textContent =
+            tenant.name + (tenant.is_primary ? " (Primary)" : "");
+          tenantSelect.appendChild(option);
+        });
+        const primary = cachedTenants.find((t) => t.is_primary);
+        if (primary) tenantSelect.value = primary.id;
       }
-    } catch (error) {
-      console.error("Error fetching lease details:", error);
     }
+
+    // Load default note for this property
+    await loadDefaultNoteForProperty(selectedLease.property_id);
+  }
+}
+
+function clearDefaultNoteUI() {
+  const alert = document.getElementById("defaultNoteAlert");
+  if (alert) alert.classList.add("d-none");
+}
+
+async function loadDefaultNoteForProperty(property_id) {
+  clearDefaultNoteUI();
+  try {
+    const res = await fetch(
+      `${propertyNotesUrl}/property/${property_id}/active`,
+      { credentials: "include" },
+    );
+    if (!res.ok) return;
+    const notes = await res.json();
+    if (Array.isArray(notes) && notes.length > 0) {
+      const notesField = document.getElementById("invoiceNotes");
+      const alert = document.getElementById("defaultNoteAlert");
+      if (notesField)
+        notesField.value = notes.map((n) => n.note_text).join("\n");
+      if (alert) alert.classList.remove("d-none");
+    }
+  } catch (err) {
+    console.warn("Could not load default property notes:", err);
   }
 }
 
@@ -284,6 +324,18 @@ function setDefaultDate() {
     const today = new Date().toISOString().split("T")[0];
     dateInput.value = today;
   }
+
+  const badge = document.getElementById("currentWeekBadge");
+  if (badge) {
+    const now = new Date();
+    // ISO week: week containing the Thursday of that week
+    const jan4 = new Date(now.getFullYear(), 0, 4);
+    const startOfWeek1 = new Date(jan4);
+    startOfWeek1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+    const week =
+      Math.floor((now - startOfWeek1) / (7 * 24 * 60 * 60 * 1000)) + 1;
+    badge.textContent = `Wk ${week}`;
+  }
 }
 
 async function openAddInvoiceDialog() {
@@ -292,6 +344,7 @@ async function openAddInvoiceDialog() {
     const form = document.getElementById("addInvoiceForm");
     form.reset();
     setDefaultDate();
+    clearDefaultNoteUI();
 
     // Set default invoice number
     const nextNumber = await getNextInvoiceNumber();

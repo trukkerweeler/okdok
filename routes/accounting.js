@@ -1517,11 +1517,9 @@ router.post("/invoices", async (req, res) => {
     if (line_items && line_items.length > 0) {
       for (const item of line_items) {
         if (!item.description || item.amount == null) {
-          return res
-            .status(400)
-            .json({
-              error: "Each line item requires a description and amount",
-            });
+          return res.status(400).json({
+            error: "Each line item requires a description and amount",
+          });
         }
       }
       computedAmount =
@@ -1625,11 +1623,9 @@ router.put("/invoices/:id", async (req, res) => {
     if (line_items && line_items.length > 0) {
       for (const item of line_items) {
         if (!item.description || item.amount == null) {
-          return res
-            .status(400)
-            .json({
-              error: "Each line item requires a description and amount",
-            });
+          return res.status(400).json({
+            error: "Each line item requires a description and amount",
+          });
         }
       }
       computedAmount =
@@ -2124,6 +2120,19 @@ router.get("/leases", async (req, res) => {
 });
 
 /**
+ * GET /leases/tenant-associations - All lease-tenant rows in one shot
+ */
+router.get("/leases/tenant-associations", async (req, res) => {
+  try {
+    const rows = await leaseRepository.getAllTenantAssociations();
+    res.json(rows);
+  } catch (error) {
+    console.error("Error fetching lease tenant associations:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * GET /leases/:id - Get lease by ID with tenants
  */
 router.get("/leases/:id", async (req, res) => {
@@ -2292,9 +2301,7 @@ router.get("/leases/:lease_id/next-number", async (req, res) => {
     if (!lease) {
       return res.status(404).json({ error: "Lease not found" });
     }
-    const nextNumber = await leaseRepository.getNextLeaseNumber(
-      lease.property_id,
-    );
+    const nextNumber = await leaseRepository.getNextLeaseNumber();
     res.json({ next_lease_number: nextNumber });
   } catch (error) {
     console.error("Error getting next lease number:", error);
@@ -2963,6 +2970,136 @@ router.get("/pm/income-summary", async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching PM income summary:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===================================================
+// PROPERTY INVOICE NOTES ENDPOINTS
+// ===================================================
+
+const propertyNotesRepository = require("../repositories/propertyNotesRepository");
+
+/**
+ * GET /property-notes - Get all property invoice notes
+ */
+router.get("/property-notes", async (req, res) => {
+  try {
+    const notes = await propertyNotesRepository.getAll();
+    res.json(notes);
+  } catch (error) {
+    console.error("Error fetching property notes:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /property-notes/property/:property_id - Get notes for a property
+ */
+router.get("/property-notes/property/:property_id", async (req, res) => {
+  try {
+    const notes = await propertyNotesRepository.getByPropertyId(
+      req.params.property_id,
+    );
+    res.json(notes);
+  } catch (error) {
+    console.error("Error fetching property notes:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /property-notes/property/:property_id/active - Get active note for a property
+ */
+router.get("/property-notes/property/:property_id/active", async (req, res) => {
+  try {
+    const notes = await propertyNotesRepository.getActiveByPropertyId(
+      req.params.property_id,
+    );
+    res.json(notes);
+  } catch (error) {
+    console.error("Error fetching active property notes:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /property-notes/:id - Get a note by ID
+ */
+router.get("/property-notes/:id", async (req, res) => {
+  try {
+    const note = await propertyNotesRepository.getById(req.params.id);
+    if (!note) {
+      return res.status(404).json({ error: "Note not found" });
+    }
+    res.json(note);
+  } catch (error) {
+    console.error("Error fetching property note:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /property-notes - Create a new property note
+ */
+router.post("/property-notes", async (req, res) => {
+  try {
+    const { property_id, note_text, is_active } = req.body;
+    if (!property_id || !note_text || note_text.trim() === "") {
+      return res
+        .status(400)
+        .json({ error: "property_id and note_text are required" });
+    }
+    const note = await propertyNotesRepository.create({
+      property_id,
+      note_text: note_text.trim(),
+      is_active: is_active !== false,
+    });
+    res.status(201).json(note);
+  } catch (error) {
+    console.error("Error creating property note:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /property-notes/:id - Update a property note
+ */
+router.put("/property-notes/:id", async (req, res) => {
+  try {
+    const existing = await propertyNotesRepository.getById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: "Note not found" });
+    }
+    const { property_id, note_text, is_active } = req.body;
+    if (!note_text || note_text.trim() === "") {
+      return res.status(400).json({ error: "note_text is required" });
+    }
+    const note = await propertyNotesRepository.update(req.params.id, {
+      property_id: property_id || existing.property_id,
+      note_text: note_text.trim(),
+      is_active: is_active !== undefined ? is_active : existing.is_active,
+    });
+    res.json(note);
+  } catch (error) {
+    console.error("Error updating property note:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /property-notes/:id - Delete a property note
+ */
+router.delete("/property-notes/:id", async (req, res) => {
+  try {
+    const existing = await propertyNotesRepository.getById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: "Note not found" });
+    }
+    await propertyNotesRepository.delete(req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting property note:", error);
     res.status(500).json({ error: error.message });
   }
 });
