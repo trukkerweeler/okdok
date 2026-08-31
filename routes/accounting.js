@@ -38,6 +38,7 @@ const attachmentRepository = require("../repositories/attachmentRepository");
 const pmExpenseReceiptRepository = require("../repositories/pmExpenseReceiptRepository");
 const leaseRepository = require("../repositories/leaseRepository");
 const mileageRepository = require("../repositories/mileageRepository");
+const tenantCreditRepository = require("../repositories/tenantCreditRepository");
 const companySettingsRepository = require("../repositories/companySettingsRepository");
 const ledgerService = require("../services/ledgerService");
 const db = require("../repositories/db");
@@ -99,6 +100,122 @@ async function reconcileInvoiceStatusByBalance(invoiceId, connection = null) {
     updated,
     transitionedToPaid: nextStatus === "paid" && previousStatus !== "paid",
   };
+}
+
+/**
+ * Record a tenant's overpayment on an invoice as reusable credit
+ */
+async function createCreditFromOverpayment(
+  { tenantId, invoiceId, paymentId, overageAmount, notes },
+  connection = null,
+) {
+  if (!tenantId || !(overageAmount > 0)) {
+    return null;
+  }
+
+  const queryFn = connection
+    ? (sql, params) => db.queryInTransaction(connection, sql, params)
+    : (sql, params) => db.query(sql, params);
+
+  const result = await queryFn(
+    `INSERT INTO tenant_credits
+       (tenant_id, source_invoice_id, source_payment_id, amount, remaining_amount, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+    [
+      tenantId,
+      invoiceId,
+      paymentId || null,
+      overageAmount,
+      overageAmount,
+      notes || null,
+    ],
+  );
+
+  return { id: result.insertId, tenantId, amount: overageAmount };
+}
+
+/**
+ * Apply a tenant's open credits (oldest first) to an invoice's outstanding balance.
+ * Each application is recorded as a 'credit' payment so existing balance/status logic just works.
+ */
+async function applyAvailableCreditsToInvoice(
+  tenantId,
+  invoiceId,
+  connection = null,
+) {
+  if (!tenantId) {
+    return { appliedTotal: 0, applications: [] };
+  }
+
+  const queryFn = connection
+    ? (sql, params) => db.queryInTransaction(connection, sql, params)
+    : (sql, params) => db.query(sql, params);
+
+  const [invoiceRow] = await queryFn(
+    `SELECT i.amount,
+            (i.amount - COALESCE((SELECT SUM(amount_paid) FROM invoice_payments WHERE invoice_id = i.id), 0)) as balance
+     FROM invoices i WHERE i.id = ?`,
+    [invoiceId],
+  );
+  if (!invoiceRow) {
+    return { appliedTotal: 0, applications: [] };
+  }
+
+  let remainingBalance = parseFloat(invoiceRow.balance);
+  if (remainingBalance <= 0) {
+    return { appliedTotal: 0, applications: [] };
+  }
+
+  const credits = await queryFn(
+    `SELECT id, remaining_amount FROM tenant_credits
+     WHERE tenant_id = ? AND remaining_amount > 0
+     ORDER BY created_at ASC`,
+    [tenantId],
+  );
+
+  const applications = [];
+  let appliedTotal = 0;
+
+  for (const credit of credits) {
+    if (remainingBalance <= 0) break;
+
+    const creditRemaining = parseFloat(credit.remaining_amount);
+    const applyAmount = Math.min(creditRemaining, remainingBalance);
+    if (!(applyAmount > 0)) continue;
+
+    const paymentResult = await queryFn(
+      `INSERT INTO invoice_payments
+         (invoice_id, payment_date, amount_paid, payment_method, reference_number, notes, transaction_type, created_at, updated_at)
+       VALUES (?, CURDATE(), ?, 'credit', ?, ?, 'tenant_to_manager', NOW(), NOW())`,
+      [
+        invoiceId,
+        applyAmount,
+        `credit-${credit.id}`,
+        `Applied tenant credit #${credit.id}`,
+      ],
+    );
+
+    await queryFn(
+      `INSERT INTO tenant_credit_applications (credit_id, invoice_id, payment_id, amount_applied, applied_at)
+       VALUES (?, ?, ?, ?, NOW())`,
+      [credit.id, invoiceId, paymentResult.insertId, applyAmount],
+    );
+
+    await queryFn(
+      `UPDATE tenant_credits SET remaining_amount = remaining_amount - ?, updated_at = NOW() WHERE id = ?`,
+      [applyAmount, credit.id],
+    );
+
+    remainingBalance -= applyAmount;
+    appliedTotal += applyAmount;
+    applications.push({ creditId: credit.id, amount: applyAmount });
+  }
+
+  if (appliedTotal > 0) {
+    await reconcileInvoiceStatusByBalance(invoiceId, connection);
+  }
+
+  return { appliedTotal, applications };
 }
 
 // ===================================================
@@ -690,6 +807,21 @@ router.post("/rent/collect", async (req, res) => {
           invoice_id,
           connection,
         );
+
+        // Amount paid beyond the invoice becomes a reusable tenant credit
+        const creditTenantId = invoice.tenant_id || tenant_id || null;
+        if (creditTenantId && statusResult && statusResult.balance < 0) {
+          await createCreditFromOverpayment(
+            {
+              tenantId: creditTenantId,
+              invoiceId: invoice_id,
+              paymentId: null,
+              overageAmount: Math.abs(statusResult.balance),
+              notes: `Overpayment on invoice ${invoice.invoice_number}`,
+            },
+            connection,
+          );
+        }
 
         return {
           id: result.insertId,
@@ -1490,6 +1622,62 @@ router.get("/invoices/owner/:owner_id", async (req, res) => {
 });
 
 /**
+ * GET /tenant-credits - Summary of available/total credit per tenant
+ */
+router.get("/tenant-credits", async (req, res) => {
+  try {
+    const summary = await tenantCreditRepository.getAllWithBalances();
+    res.json(summary);
+  } catch (error) {
+    console.error("Error fetching tenant credit summary:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /tenant-credits/:tenant_id - List a tenant's overpayment credits and available balance
+ */
+router.get("/tenant-credits/:tenant_id", async (req, res) => {
+  try {
+    const credits = await tenantCreditRepository.getByTenantId(
+      req.params.tenant_id,
+    );
+    const available = await tenantCreditRepository.getAvailableBalance(
+      req.params.tenant_id,
+    );
+    res.json({ available, credits });
+  } catch (error) {
+    console.error("Error fetching tenant credits:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /tenant-credits/apply - Manually apply a tenant's open credit to a specific invoice
+ */
+router.post("/tenant-credits/apply", async (req, res) => {
+  try {
+    const { tenant_id, invoice_id } = req.body;
+    if (!tenant_id || !invoice_id) {
+      return res
+        .status(400)
+        .json({ error: "tenant_id and invoice_id are required" });
+    }
+
+    const invoice = await invoiceRepository.getById(invoice_id);
+    if (!invoice) {
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+
+    const result = await applyAvailableCreditsToInvoice(tenant_id, invoice_id);
+    res.json(result);
+  } catch (error) {
+    console.error("Error applying tenant credit:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * POST /invoices - Create new invoice
  */
 router.post("/invoices", async (req, res) => {
@@ -1517,11 +1705,9 @@ router.post("/invoices", async (req, res) => {
     if (line_items && line_items.length > 0) {
       for (const item of line_items) {
         if (!item.description || item.amount == null) {
-          return res
-            .status(400)
-            .json({
-              error: "Each line item requires a description and amount",
-            });
+          return res.status(400).json({
+            error: "Each line item requires a description and amount",
+          });
         }
       }
       computedAmount =
@@ -1545,11 +1731,12 @@ router.post("/invoices", async (req, res) => {
         const result = await db.queryInTransaction(
           connection,
           `INSERT INTO invoices
-           (property_id, lease_id, owner_id, invoice_number, amount, invoice_date, due_date, description, status, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+           (property_id, lease_id, tenant_id, owner_id, invoice_number, amount, invoice_date, due_date, description, status, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
           [
             property_id || null,
             lease_id || null,
+            tenant_id || null,
             owner_id,
             nextInvoiceNumber,
             computedAmount,
@@ -1573,6 +1760,9 @@ router.post("/invoices", async (req, res) => {
             ],
           );
         }
+        if (tenant_id) {
+          await applyAvailableCreditsToInvoice(tenant_id, id, connection);
+        }
         return id;
       });
       const invoice = await invoiceRepository.getById(invoiceId);
@@ -1593,8 +1783,15 @@ router.post("/invoices", async (req, res) => {
       status: status || "pending",
       notes,
     });
-    invoice.line_items = [];
-    res.status(201).json(invoice);
+
+    // Apply any open tenant credit toward this new invoice before returning it
+    if (tenant_id) {
+      await applyAvailableCreditsToInvoice(tenant_id, invoice.id);
+    }
+
+    const finalInvoice = await invoiceRepository.getById(invoice.id);
+    finalInvoice.line_items = [];
+    res.status(201).json(finalInvoice);
   } catch (error) {
     console.error("Error creating invoice:", error);
     res.status(500).json({ error: error.message });
@@ -1625,11 +1822,9 @@ router.put("/invoices/:id", async (req, res) => {
     if (line_items && line_items.length > 0) {
       for (const item of line_items) {
         if (!item.description || item.amount == null) {
-          return res
-            .status(400)
-            .json({
-              error: "Each line item requires a description and amount",
-            });
+          return res.status(400).json({
+            error: "Each line item requires a description and amount",
+          });
         }
       }
       computedAmount =
@@ -1833,6 +2028,25 @@ router.post("/payments", async (req, res) => {
           ledgerError,
         );
         // Don't fail the payment if ledger posting fails
+      }
+    }
+
+    // Amount paid beyond the invoice becomes a reusable tenant credit
+    if (invoice.tenant_id && statusResult && statusResult.balance < 0) {
+      try {
+        await createCreditFromOverpayment({
+          tenantId: invoice.tenant_id,
+          invoiceId: invoice_id,
+          paymentId: payment.id,
+          overageAmount: Math.abs(statusResult.balance),
+          notes: `Overpayment on invoice ${invoice.invoice_number}`,
+        });
+      } catch (creditError) {
+        console.error(
+          "Warning: Could not record tenant credit for overpayment:",
+          creditError,
+        );
+        // Don't fail the payment if credit tracking fails
       }
     }
 
