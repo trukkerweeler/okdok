@@ -122,6 +122,7 @@ const invoiceRepository = {
   create: async ({
     property_id,
     lease_id,
+    tenant_id,
     owner_id,
     invoice_number,
     amount,
@@ -133,12 +134,13 @@ const invoiceRepository = {
   }) => {
     const sql = `
       INSERT INTO invoices 
-      (property_id, lease_id, owner_id, invoice_number, amount, invoice_date, due_date, description, status, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      (property_id, lease_id, tenant_id, owner_id, invoice_number, amount, invoice_date, due_date, description, status, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `;
     const results = await db.query(sql, [
       property_id,
       lease_id,
+      tenant_id || null,
       owner_id,
       invoice_number,
       amount,
