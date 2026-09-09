@@ -523,7 +523,10 @@ async function submitTransaction(e) {
     ? parseInt(document.getElementById("entryProperty").value)
     : null;
   const owner_id = getOwnerIdFromProperty();
-  const amount = parseFloat(document.getElementById("entryAmount").value);
+  const amountInput = parseFloat(document.getElementById("entryAmount").value);
+  const amount = Number.isFinite(amountInput)
+    ? Math.round((amountInput + Number.EPSILON) * 100) / 100
+    : NaN;
   const memo = document.getElementById("entryMemo").value;
   // Keep date as string from input (YYYY-MM-DD format) - backend will handle it as local date
   const date = document.getElementById("entryDate").value;
@@ -1026,17 +1029,17 @@ function displayTransactions() {
           : `<span class="log-type-badge badge-unreimbursed">Pending</span>`
         : "";
 
-    // Add receipt indicator for expenses
+    // Add receipt indicator for expenses and rent deposits
+    const supportsReceipt = type === "expense" || type === "rent";
     const hasReceipts =
-      type === "expense" && t.receipt_count && t.receipt_count > 0;
+      supportsReceipt && t.receipt_count && t.receipt_count > 0;
     const receiptClass = hasReceipts ? "receipt-attached" : "receipt-empty";
     const receiptBadge = hasReceipts
       ? `<span class="receipt-badge">${t.receipt_count}</span>`
       : "";
-    const receiptIndicator =
-      type === "expense"
-        ? `<div class="log-action log-receipt ${receiptClass}" data-id="${t.id}" data-receipt-count="${t.receipt_count || 0}" title="${hasReceipts ? "View Receipt" : "Attach Receipt"}">📎${receiptBadge}</div>`
-        : "";
+    const receiptIndicator = supportsReceipt
+      ? `<div class="log-action log-receipt ${receiptClass}" data-id="${t.id}" data-receipt-count="${t.receipt_count || 0}" title="${hasReceipts ? "View Receipt" : "Attach Receipt"}">📎${receiptBadge}</div>`
+      : "";
 
     // Add report button for distributions
     const reportButton =

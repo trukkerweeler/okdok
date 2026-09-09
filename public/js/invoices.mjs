@@ -19,6 +19,7 @@ let tenants = [];
 let leases = [];
 let invoices = [];
 let leaseTenantMap = new Map(); // lease_id -> [{id, name, is_primary}]
+let isSavingInvoice = false;
 
 // Initialize handler function
 async function initializeInvoices() {
@@ -383,25 +384,35 @@ async function getNextInvoiceNumber() {
 
 async function saveInvoice(event) {
   event.preventDefault();
+  if (isSavingInvoice) return;
+
+  isSavingInvoice = true;
+  const saveButton = document.getElementById("saveInvoiceBtn");
+  const originalButtonText = saveButton?.textContent;
+  if (saveButton) {
+    saveButton.disabled = true;
+    saveButton.textContent = "Saving...";
+  }
+
   const form = document.getElementById("addInvoiceForm");
   const formData = new FormData(form);
 
-  const lineItemRows = document.querySelectorAll(".line-item-row");
-  const line_items = [];
-  lineItemRows.forEach((row) => {
-    const desc = row.querySelector(".line-item-desc").value.trim();
-    const amt = parseFloat(row.querySelector(".line-item-amount").value);
-    if (desc && !isNaN(amt) && amt > 0) {
-      line_items.push({ description: desc, amount: amt });
-    }
-  });
-
-  if (line_items.length === 0) {
-    alert("Please add at least one line item with a description and amount.");
-    return;
-  }
-
   try {
+    const lineItemRows = document.querySelectorAll(".line-item-row");
+    const line_items = [];
+    lineItemRows.forEach((row) => {
+      const desc = row.querySelector(".line-item-desc").value.trim();
+      const amt = parseFloat(row.querySelector(".line-item-amount").value);
+      if (desc && !isNaN(amt) && amt > 0) {
+        line_items.push({ description: desc, amount: amt });
+      }
+    });
+
+    if (line_items.length === 0) {
+      alert("Please add at least one line item with a description and amount.");
+      return;
+    }
+
     const dataJson = {
       lease_id: formData.get("lease_id")
         ? parseInt(formData.get("lease_id"))
@@ -442,6 +453,12 @@ async function saveInvoice(event) {
   } catch (error) {
     console.error("Error saving invoice:", error);
     alert(`Error: ${error.message}`);
+  } finally {
+    isSavingInvoice = false;
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.textContent = originalButtonText;
+    }
   }
 }
 

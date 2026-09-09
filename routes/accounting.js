@@ -753,6 +753,14 @@ router.post("/rent/collect", async (req, res) => {
   try {
     const { amount, property_id, owner_id, tenant_id, memo, date, invoice_id } =
       req.body;
+    const parsedAmount = Number(amount);
+    const normalizedAmount = Number.isFinite(parsedAmount)
+      ? Math.round((parsedAmount + Number.EPSILON) * 100) / 100
+      : NaN;
+
+    if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+      return res.status(400).json({ error: "Amount must be a positive number" });
+    }
 
     // Get required accounts upfront (outside transaction — read-only)
     let trustAccount = await accountRepository.getByName("Trust Cash Account");
@@ -787,7 +795,7 @@ router.post("/rent/collect", async (req, res) => {
           date,
           trustAccount.id,
           rentIncomeAccount.id,
-          amount,
+          normalizedAmount,
           memo || `Rent collected for property ${property_id}`,
           property_id || null,
           owner_id || null,
@@ -800,7 +808,7 @@ router.post("/rent/collect", async (req, res) => {
           `INSERT INTO invoice_payments
            (invoice_id, payment_date, amount_paid, payment_method, reference_number, notes, transaction_type, created_at, updated_at)
            VALUES (?, ?, ?, NULL, NULL, ?, 'tenant_to_manager', NOW(), NOW())`,
-          [invoice_id, date, amount, memo || null],
+          [invoice_id, date, normalizedAmount, memo || null],
         );
 
         const statusResult = await reconcileInvoiceStatusByBalance(
@@ -828,7 +836,7 @@ router.post("/rent/collect", async (req, res) => {
           date,
           debit_account_id: trustAccount.id,
           credit_account_id: rentIncomeAccount.id,
-          amount,
+          amount: normalizedAmount,
           memo: memo || `Rent collected for property ${property_id}`,
           property_id: property_id || null,
           owner_id: owner_id || null,
@@ -845,7 +853,7 @@ router.post("/rent/collect", async (req, res) => {
     const entry = await ledgerService.postTransaction({
       debit_account_id: trustAccount.id,
       credit_account_id: rentIncomeAccount.id,
-      amount,
+      amount: normalizedAmount,
       memo: memo || `Rent collected for property ${property_id}`,
       property_id,
       owner_id,
@@ -1978,58 +1986,82 @@ router.post("/payments", async (req, res) => {
       return res.status(404).json({ error: "Invoice not found" });
     }
 
-    const payment = await paymentRepository.create({
-      invoice_id,
-      payment_date: payment_date || new Date().toISOString().split("T")[0],
-      amount_paid,
-      payment_method,
-      reference_number,
-      notes,
-      transaction_type: transaction_type || "tenant_to_manager",
-    });
-
-    // Reconcile invoice status based on remaining balance after payment.
-    const statusResult = await reconcileInvoiceStatusByBalance(invoice_id);
-
-    // Post to ledger if amount paid matches or exceeds invoice amount
-    if (statusResult && statusResult.transitionedToPaid) {
-      try {
-        let trustAccount =
-          await accountRepository.getByName("Trust Cash Account");
-        if (!trustAccount) {
-          console.warn("Trust Cash Account not found for ledger posting");
-        } else {
-          // Find appropriate income account based on invoice description
-          let incomeAccount = await accountRepository.getByName("Rent Income");
-          if (
-            invoice.description &&
-            invoice.description.toLowerCase().includes("deposit")
-          ) {
-            incomeAccount = await accountRepository.getByName(
-              "Security Deposit Liability",
-            );
-          }
-
-          if (incomeAccount && trustAccount.id !== incomeAccount.id) {
-            await ledgerService.postTransaction({
-              debit_account_id: trustAccount.id,
-              credit_account_id: incomeAccount.id,
-              amount: parseFloat(invoice.amount),
-              memo: `Payment received for invoice ${invoice.invoice_number}`,
-              property_id: invoice.property_id,
-              owner_id: invoice.owner_id,
-              date: payment_date || new Date().toISOString().split("T")[0],
-            });
-          }
-        }
-      } catch (ledgerError) {
-        console.error(
-          "Warning: Could not post payment to ledger:",
-          ledgerError,
-        );
-        // Don't fail the payment if ledger posting fails
-      }
+    // Read-only account lookups (outside transaction), matching /rent/collect
+    let trustAccount = await accountRepository.getByName("Trust Cash Account");
+    let incomeAccount = await accountRepository.getByName("Rent Income");
+    if (
+      invoice.description &&
+      invoice.description.toLowerCase().includes("deposit")
+    ) {
+      incomeAccount = await accountRepository.getByName(
+        "Security Deposit Liability",
+      );
     }
+
+    const resolvedPaymentDate =
+      payment_date || new Date().toISOString().split("T")[0];
+
+    // Atomic: record payment + reconcile invoice status + post ledger entry for this payment's amount
+    const { payment, statusResult } = await db.transaction(
+      async (connection) => {
+        const insertResult = await db.queryInTransaction(
+          connection,
+          `INSERT INTO invoice_payments
+         (invoice_id, payment_date, amount_paid, payment_method, reference_number, notes, transaction_type, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          [
+            invoice_id,
+            resolvedPaymentDate,
+            amount_paid,
+            payment_method,
+            reference_number,
+            notes,
+            transaction_type || "tenant_to_manager",
+          ],
+        );
+
+        const statusResult = await reconcileInvoiceStatusByBalance(
+          invoice_id,
+          connection,
+        );
+
+        // Post the incremental amount actually paid, every time (not just on final payoff)
+        if (
+          trustAccount &&
+          incomeAccount &&
+          trustAccount.id !== incomeAccount.id
+        ) {
+          await db.queryInTransaction(
+            connection,
+            `INSERT INTO ledger_entries
+           (date, debit_account_id, credit_account_id, amount, memo, property_id, owner_id, tenant_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [
+              resolvedPaymentDate,
+              trustAccount.id,
+              incomeAccount.id,
+              amount_paid,
+              `Payment received for invoice ${invoice.invoice_number}`,
+              invoice.property_id || null,
+              invoice.owner_id || null,
+              invoice.tenant_id || null,
+            ],
+          );
+        } else {
+          console.warn(
+            "Trust Cash Account or income account not found for ledger posting",
+          );
+        }
+
+        const paymentRow = await db.queryInTransaction(
+          connection,
+          "SELECT * FROM invoice_payments WHERE id = ?",
+          [insertResult.insertId],
+        );
+
+        return { payment: paymentRow[0], statusResult };
+      },
+    );
 
     // Amount paid beyond the invoice becomes a reusable tenant credit
     if (invoice.tenant_id && statusResult && statusResult.balance < 0) {
