@@ -129,13 +129,14 @@ const invoiceRepository = {
     invoice_date,
     due_date,
     description,
+    charge_type,
     status,
     notes,
   }) => {
     const sql = `
       INSERT INTO invoices 
-      (property_id, lease_id, tenant_id, owner_id, invoice_number, amount, invoice_date, due_date, description, status, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      (property_id, lease_id, tenant_id, owner_id, invoice_number, amount, invoice_date, due_date, description, charge_type, status, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `;
     const results = await db.query(sql, [
       property_id,
@@ -147,6 +148,7 @@ const invoiceRepository = {
       invoice_date,
       due_date,
       description,
+      charge_type || "rent",
       status,
       notes,
     ]);
@@ -167,6 +169,7 @@ const invoiceRepository = {
       invoice_date,
       due_date,
       description,
+      charge_type,
       status,
       notes,
     },
@@ -175,7 +178,7 @@ const invoiceRepository = {
       UPDATE invoices 
       SET property_id = ?, lease_id = ?, owner_id = ?, invoice_number = ?, 
           amount = ?, invoice_date = ?, due_date = ?, description = ?, 
-          status = ?, notes = ?, updated_at = NOW()
+          charge_type = ?, status = ?, notes = ?, updated_at = NOW()
       WHERE id = ?
     `;
     await db.query(sql, [
@@ -187,6 +190,7 @@ const invoiceRepository = {
       invoice_date,
       due_date,
       description,
+      charge_type || "rent",
       status,
       notes,
       id,

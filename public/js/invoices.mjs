@@ -363,6 +363,12 @@ async function openAddInvoiceDialog() {
       statusSelect.value = "pending";
     }
 
+    // Set default charge type
+    const chargeTypeSelect = document.getElementById("invoiceChargeType");
+    if (chargeTypeSelect) {
+      chargeTypeSelect.value = "rent";
+    }
+
     dialog.showModal();
   }
 }
@@ -425,6 +431,7 @@ async function saveInvoice(event) {
       invoice_date: formData.get("invoice_date"),
       due_date: formData.get("due_date") || null,
       status: formData.get("status"),
+      charge_type: formData.get("charge_type") || "rent",
       notes: formData.get("notes") || null,
       line_items,
     };

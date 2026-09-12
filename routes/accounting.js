@@ -43,6 +43,19 @@ const companySettingsRepository = require("../repositories/companySettingsReposi
 const ledgerService = require("../services/ledgerService");
 const db = require("../repositories/db");
 
+// Maps an invoice's charge_type to the ledger account its payments post to
+const CHARGE_TYPE_ACCOUNTS = {
+  rent: "Rent Income",
+  security_deposit: "Security Deposit Liability",
+  pet_deposit: "Pet Deposit Liability",
+  late_fee: "Late Fee Income",
+  pet_fee: "Pet Fee Income",
+  utility_reimbursement: "Utility Reimbursement Income",
+  application_fee: "Application Fee Income",
+  other_income: "Other Income",
+};
+
+
 async function reconcileInvoiceStatusByBalance(invoiceId, connection = null) {
   const queryFn = connection
     ? (sql, params) => db.queryInTransaction(connection, sql, params)
@@ -770,8 +783,8 @@ router.post("/rent/collect", async (req, res) => {
         .json({ error: "Trust Cash Account not found. Run seed script." });
     }
 
-    let rentIncomeAccount = await accountRepository.getByName("Rent Income");
-    if (!rentIncomeAccount) {
+    let defaultRentIncomeAccount = await accountRepository.getByName("Rent Income");
+    if (!defaultRentIncomeAccount) {
       return res
         .status(400)
         .json({ error: "Rent Income Account not found. Run seed script." });
@@ -784,6 +797,20 @@ router.post("/rent/collect", async (req, res) => {
         return res.status(404).json({ error: "Invoice not found" });
       }
 
+      // Credit the account matching the invoice's charge_type (e.g. a security
+      // deposit invoice posts to the liability account, not Rent Income)
+      const incomeAccountName =
+        CHARGE_TYPE_ACCOUNTS[invoice.charge_type] || "Rent Income";
+      const incomeAccount =
+        incomeAccountName === "Rent Income"
+          ? defaultRentIncomeAccount
+          : await accountRepository.getByName(incomeAccountName);
+      if (!incomeAccount) {
+        return res.status(400).json({
+          error: `${incomeAccountName} Account not found. Run seed script.`,
+        });
+      }
+
       // Atomic: post ledger entry + record payment + reconcile invoice status
       const entry = await db.transaction(async (connection) => {
         const insertSql = `
@@ -794,7 +821,7 @@ router.post("/rent/collect", async (req, res) => {
         const result = await db.queryInTransaction(connection, insertSql, [
           date,
           trustAccount.id,
-          rentIncomeAccount.id,
+          incomeAccount.id,
           normalizedAmount,
           memo || `Rent collected for property ${property_id}`,
           property_id || null,
@@ -835,7 +862,7 @@ router.post("/rent/collect", async (req, res) => {
           id: result.insertId,
           date,
           debit_account_id: trustAccount.id,
-          credit_account_id: rentIncomeAccount.id,
+          credit_account_id: incomeAccount.id,
           amount: normalizedAmount,
           memo: memo || `Rent collected for property ${property_id}`,
           property_id: property_id || null,
@@ -852,7 +879,7 @@ router.post("/rent/collect", async (req, res) => {
     // No invoice — simple ledger post
     const entry = await ledgerService.postTransaction({
       debit_account_id: trustAccount.id,
-      credit_account_id: rentIncomeAccount.id,
+      credit_account_id: defaultRentIncomeAccount.id,
       amount: normalizedAmount,
       memo: memo || `Rent collected for property ${property_id}`,
       property_id,
@@ -1700,6 +1727,7 @@ router.post("/invoices", async (req, res) => {
       invoice_date,
       due_date,
       description,
+      charge_type,
       status,
       notes,
       line_items,
@@ -1739,8 +1767,8 @@ router.post("/invoices", async (req, res) => {
         const result = await db.queryInTransaction(
           connection,
           `INSERT INTO invoices
-           (property_id, lease_id, tenant_id, owner_id, invoice_number, amount, invoice_date, due_date, description, status, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+           (property_id, lease_id, tenant_id, owner_id, invoice_number, amount, invoice_date, due_date, description, charge_type, status, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
           [
             property_id || null,
             lease_id || null,
@@ -1751,6 +1779,7 @@ router.post("/invoices", async (req, res) => {
             invoice_date || new Date().toISOString().split("T")[0],
             due_date || null,
             description || null,
+            charge_type || "rent",
             status || "pending",
             notes || null,
           ],
@@ -1788,6 +1817,7 @@ router.post("/invoices", async (req, res) => {
       invoice_date: invoice_date || new Date().toISOString().split("T")[0],
       due_date,
       description: description || "Deposit + First Month Rent",
+      charge_type: charge_type || "rent",
       status: status || "pending",
       notes,
     });
@@ -1821,6 +1851,7 @@ router.put("/invoices/:id", async (req, res) => {
       invoice_date,
       due_date,
       description,
+      charge_type,
       status,
       notes,
       line_items,
@@ -1851,6 +1882,7 @@ router.put("/invoices/:id", async (req, res) => {
       invoice_date,
       due_date,
       description,
+      charge_type,
       status,
       notes,
     });
@@ -1988,15 +2020,13 @@ router.post("/payments", async (req, res) => {
 
     // Read-only account lookups (outside transaction), matching /rent/collect
     let trustAccount = await accountRepository.getByName("Trust Cash Account");
-    let incomeAccount = await accountRepository.getByName("Rent Income");
-    if (
-      invoice.description &&
-      invoice.description.toLowerCase().includes("deposit")
-    ) {
-      incomeAccount = await accountRepository.getByName(
-        "Security Deposit Liability",
-      );
-    }
+    const chargeTypeAccountName =
+      CHARGE_TYPE_ACCOUNTS[invoice.charge_type] ||
+      // Legacy fallback for invoices predating charge_type: guess from description text
+      (invoice.description && invoice.description.toLowerCase().includes("deposit")
+        ? "Security Deposit Liability"
+        : "Rent Income");
+    let incomeAccount = await accountRepository.getByName(chargeTypeAccountName);
 
     const resolvedPaymentDate =
       payment_date || new Date().toISOString().split("T")[0];

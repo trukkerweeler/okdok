@@ -468,7 +468,10 @@ function populateInvoiceDropdown() {
     const propertyLabel = inv.property_address
       ? ` - ${inv.property_address}`
       : "";
-    option.textContent = `Invoice #${inv.id}${propertyLabel} - ${balanceLabel} (Due: ${dueDate})`;
+    const chargeTypeLabel = inv.charge_type
+      ? `[${getTransactionTypeLabel(inv.charge_type)}] `
+      : "";
+    option.textContent = `${chargeTypeLabel}Invoice #${inv.id}${propertyLabel} - ${balanceLabel} (Due: ${dueDate})`;
     select.appendChild(option);
   });
 }
@@ -1014,7 +1017,7 @@ function displayTransactions() {
       console.log("Distribution transaction found:", t);
     }
 
-    const typeBadge = `<span class="log-type-badge badge-${type}" title="Transaction #${t.id}">${type.toUpperCase()}</span>`;
+    const typeBadge = `<span class="log-type-badge badge-${type}" title="Transaction #${t.id}">${getTransactionTypeLabel(type)}</span>`;
     const amount = parseFloat(t.amount) || 0;
     const propStr = t.property_id ? `#${t.property_id}` : "(no prop)";
     const vendorStr = t.vendor_id
@@ -1029,8 +1032,9 @@ function displayTransactions() {
           : `<span class="log-type-badge badge-unreimbursed">Pending</span>`
         : "";
 
-    // Add receipt indicator for expenses and rent deposits
-    const supportsReceipt = type === "expense" || type === "rent";
+    // Receipts attach to any ledger entry, so allow them for every type except
+    // distributions (which use the report button instead)
+    const supportsReceipt = type !== "distribution";
     const hasReceipts =
       supportsReceipt && t.receipt_count && t.receipt_count > 0;
     const receiptClass = hasReceipts ? "receipt-attached" : "receipt-empty";
@@ -1295,6 +1299,15 @@ function getTransactionType(txn) {
     ? txn.credit_account_name.toLowerCase()
     : "";
 
+  // Check specific/narrow account names before generic ones (e.g. "late fee"
+  // and "management fee" both contain "fee", so specific checks go first)
+  if (creditAcct.includes("security deposit")) return "security_deposit";
+  if (creditAcct.includes("pet deposit")) return "pet_deposit";
+  if (creditAcct.includes("late fee")) return "late_fee";
+  if (creditAcct.includes("pet fee")) return "pet_fee";
+  if (creditAcct.includes("application fee")) return "application_fee";
+  if (creditAcct.includes("utility")) return "utility_reimbursement";
+
   // Rent: Trust Cash (debit) + Rent Income (credit)
   if (creditAcct.includes("rent")) return "rent";
 
@@ -1302,18 +1315,38 @@ function getTransactionType(txn) {
   if (creditAcct.includes("management fee") || creditAcct.includes("fee"))
     return "fee";
 
+  if (creditAcct.includes("other income")) return "other_income";
+
   // Expense: Owner Expense (debit) + Trust Cash (credit)
   if (debitAcct.includes("expense")) return "expense";
 
   // Fallback: try memo as last resort
   const memoLower = txn.memo ? txn.memo.toLowerCase() : "";
 
+  if (memoLower.includes("deposit")) return "security_deposit";
   if (memoLower.includes("expense")) return "expense";
   if (memoLower.includes("rent")) return "rent";
   if (memoLower.includes("fee")) return "fee";
 
   return "transaction";
 }
+
+// Human-readable label for a transaction type (used instead of a raw
+// uppercased type string so multi-word types like "security_deposit" read well)
+const TRANSACTION_TYPE_LABELS = {
+  security_deposit: "SECURITY DEPOSIT",
+  pet_deposit: "PET DEPOSIT",
+  late_fee: "LATE FEE",
+  pet_fee: "PET FEE",
+  application_fee: "APPLICATION FEE",
+  utility_reimbursement: "UTILITY REIMB.",
+  other_income: "OTHER INCOME",
+};
+
+function getTransactionTypeLabel(type) {
+  return TRANSACTION_TYPE_LABELS[type] || type.toUpperCase();
+}
+
 
 async function undoTransaction(id) {
   try {
@@ -1348,7 +1381,7 @@ function exportToCSV() {
     formatDateShort(t.date),
     t.owner_name || "",
     parseFloat(t.amount || 0).toFixed(2),
-    getTransactionType(t),
+    getTransactionTypeLabel(getTransactionType(t)),
     t.memo || "",
   ]);
 
