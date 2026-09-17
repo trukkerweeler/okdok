@@ -759,7 +759,9 @@ router.post("/rent/collect", async (req, res) => {
       : NaN;
 
     if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
-      return res.status(400).json({ error: "Amount must be a positive number" });
+      return res
+        .status(400)
+        .json({ error: "Amount must be a positive number" });
     }
 
     // Get required accounts upfront (outside transaction — read-only)
@@ -1699,6 +1701,7 @@ router.post("/invoices", async (req, res) => {
       amount,
       invoice_date,
       due_date,
+      rent_period,
       description,
       status,
       notes,
@@ -1739,8 +1742,8 @@ router.post("/invoices", async (req, res) => {
         const result = await db.queryInTransaction(
           connection,
           `INSERT INTO invoices
-           (property_id, lease_id, tenant_id, owner_id, invoice_number, amount, invoice_date, due_date, description, status, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+           (property_id, lease_id, tenant_id, owner_id, invoice_number, amount, invoice_date, due_date, rent_period, description, status, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
           [
             property_id || null,
             lease_id || null,
@@ -1750,6 +1753,7 @@ router.post("/invoices", async (req, res) => {
             computedAmount,
             invoice_date || new Date().toISOString().split("T")[0],
             due_date || null,
+            rent_period || null,
             description || null,
             status || "pending",
             notes || null,
@@ -1787,6 +1791,7 @@ router.post("/invoices", async (req, res) => {
       amount: computedAmount,
       invoice_date: invoice_date || new Date().toISOString().split("T")[0],
       due_date,
+      rent_period,
       description: description || "Deposit + First Month Rent",
       status: status || "pending",
       notes,
@@ -1820,6 +1825,7 @@ router.put("/invoices/:id", async (req, res) => {
       amount,
       invoice_date,
       due_date,
+      rent_period,
       description,
       status,
       notes,
@@ -1850,6 +1856,7 @@ router.put("/invoices/:id", async (req, res) => {
       amount: computedAmount,
       invoice_date,
       due_date,
+      rent_period,
       description,
       status,
       notes,
@@ -1893,6 +1900,49 @@ router.get("/payments", async (req, res) => {
     res.json(payments);
   } catch (error) {
     console.error("Error fetching payments:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /payments/tenant-report - Get a tenant's receipts for a rent period
+ * start_date must be the first day of the target rent period (e.g. 2026-08-01);
+ * end_date bounds payment_date (month-end, or today when the "through today" toggle is on).
+ */
+router.get("/payments/tenant-report", async (req, res) => {
+  try {
+    const { tenant_id, start_date, end_date } = req.query;
+    if (!tenant_id || !start_date || !end_date) {
+      return res.status(400).json({
+        error: "tenant_id, start_date, and end_date are required",
+      });
+    }
+
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    if (!datePattern.test(start_date) || !datePattern.test(end_date)) {
+      return res
+        .status(400)
+        .json({ error: "Dates must use YYYY-MM-DD format" });
+    }
+    if (!start_date.endsWith("-01")) {
+      return res
+        .status(400)
+        .json({ error: "start_date must be the first day of the rent period" });
+    }
+
+    const tenant = await tenantRepository.getById(tenant_id);
+    if (!tenant) {
+      return res.status(404).json({ error: "Tenant not found" });
+    }
+
+    const payments = await paymentRepository.getTenantMonthlyReport(
+      tenant_id,
+      start_date,
+      end_date,
+    );
+    res.json({ tenant, start_date, end_date, payments });
+  } catch (error) {
+    console.error("Error fetching tenant payment report:", error);
     res.status(500).json({ error: error.message });
   }
 });

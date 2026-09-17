@@ -326,6 +326,12 @@ function setDefaultDate() {
     dateInput.value = today;
   }
 
+  const rentPeriodInput = document.getElementById("invoiceRentPeriod");
+  if (rentPeriodInput) {
+    const now = new Date();
+    rentPeriodInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  }
+
   const badge = document.getElementById("currentWeekBadge");
   if (badge) {
     const now = new Date();
@@ -424,6 +430,9 @@ async function saveInvoice(event) {
       invoice_number: formData.get("invoice_number"),
       invoice_date: formData.get("invoice_date"),
       due_date: formData.get("due_date") || null,
+      rent_period: formData.get("rent_period")
+        ? `${formData.get("rent_period")}-01`
+        : null,
       status: formData.get("status"),
       notes: formData.get("notes") || null,
       line_items,
