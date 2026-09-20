@@ -40,7 +40,8 @@ const createCompanySettingsTable = async () => {
         ('company_address', '149 S Canyon View Drive', 'Company street address'),
         ('company_city', 'Elk Ridge', 'Company city'),
         ('company_state', 'UT', 'Company state'),
-        ('company_zip', '84651', 'Company zip code')`;
+        ('company_zip', '84651', 'Company zip code'),
+        ('common_trips', '[]', 'Saved common mileage trips')`;
       await db.query(sql);
       console.log("✓ Inserted default company settings");
     }

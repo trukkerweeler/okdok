@@ -272,6 +272,67 @@
         </div>
       </div>
 
+      <!-- Common Trips Section -->
+      <div class="row mt-4">
+        <div class="col-lg-8">
+          <div class="card">
+            <div class="card-header bg-primary text-white">
+              <h5 class="mb-0">Common Trips</h5>
+            </div>
+            <div class="card-body">
+              <p class="text-muted small mb-3">
+                Save repeated routes so the Mileage Tracker can fill in the
+                locations and distance for you.
+              </p>
+              <div class="table-responsive">
+                <table class="table table-sm" id="commonTripsTable">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Route</th>
+                      <th>Miles</th>
+                      <th>Property</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="commonTripsTableBody"></tbody>
+                </table>
+              </div>
+              <div class="mt-3 pt-3 border-top">
+                <h6>Add Common Trip</h6>
+                <form id="addCommonTripForm" class="row g-2 align-items-end">
+                  <div class="col-md-4">
+                    <label for="commonTripName" class="form-label">Name</label>
+                    <input type="text" class="form-control" id="commonTripName" required />
+                  </div>
+                  <div class="col-md-4">
+                    <label for="commonTripStarting" class="form-label">Starting location</label>
+                    <input type="text" class="form-control" id="commonTripStarting" required />
+                  </div>
+                  <div class="col-md-4">
+                    <label for="commonTripEnding" class="form-label">Ending location</label>
+                    <input type="text" class="form-control" id="commonTripEnding" required />
+                  </div>
+                  <div class="col-md-3">
+                    <label for="commonTripMiles" class="form-label">Miles</label>
+                    <input type="number" class="form-control" id="commonTripMiles" min="0" step="0.1" required />
+                  </div>
+                  <div class="col-md-6">
+                    <label for="commonTripProperty" class="form-label">Property (optional)</label>
+                    <select class="form-control" id="commonTripProperty">
+                      <option value="">No property</option>
+                    </select>
+                  </div>
+                  <div class="col-md-3">
+                    <button type="submit" class="btn btn-sm btn-primary w-100">Save Trip</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Mileage Rates Section -->
       <div class="row mt-4">
         <div class="col-lg-8">

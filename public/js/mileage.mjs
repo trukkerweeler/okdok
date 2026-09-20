@@ -11,6 +11,26 @@ const propertiesUrl = `${apiUrl}/accounting/properties`;
 let user;
 let properties = [];
 let mileage = [];
+let commonMileageRoutes = [];
+
+const DEFAULT_COMMON_MILEAGE_ROUTES = [
+  {
+    id: "office-to-property-632",
+    name: "Office to Property 632",
+    startingLocation: "Office",
+    endingLocation: "Property 632",
+    miles: 31.7,
+    propertyId: "632",
+  },
+  {
+    id: "property-632-to-office",
+    name: "Property 632 to Office",
+    startingLocation: "Property 632",
+    endingLocation: "Office",
+    miles: 31.7,
+    propertyId: "632",
+  },
+];
 
 // IRS standard mileage rates by year — fallback defaults
 // Source: https://www.irs.gov/tax-professionals/standard-mileage-rates
@@ -49,10 +69,41 @@ async function initializeMileage() {
   setupEventListeners();
   await loadMileageRatesFromSettings();
   await loadReferenceData();
+  await loadCommonMileageRoutes();
   await loadMileageData();
   populateYearFilter();
   setDefaultDate();
   updateStatistics();
+}
+
+async function loadCommonMileageRoutes() {
+  const routeSelect = document.getElementById("mileageRoute");
+  if (!routeSelect) return;
+
+  try {
+    const response = await fetch(`${apiUrl}/accounting/company-settings`, {
+      credentials: "include",
+    });
+    if (!response.ok) throw new Error("Failed to load common trips");
+    const settings = await response.json();
+    commonMileageRoutes = settings.common_trips
+      ? JSON.parse(settings.common_trips)
+      : DEFAULT_COMMON_MILEAGE_ROUTES;
+    if (!Array.isArray(commonMileageRoutes)) {
+      commonMileageRoutes = DEFAULT_COMMON_MILEAGE_ROUTES;
+    }
+  } catch (error) {
+    console.error("Error loading common mileage routes:", error);
+    commonMileageRoutes = DEFAULT_COMMON_MILEAGE_ROUTES;
+  }
+
+  routeSelect.innerHTML = '<option value="">Choose a saved route...</option>';
+  commonMileageRoutes.forEach((route) => {
+    const option = document.createElement("option");
+    option.value = route.id;
+    option.textContent = `${route.name} (${Number(route.miles).toFixed(1)} mi)`;
+    routeSelect.appendChild(option);
+  });
 }
 
 // Run initialization when DOM is ready
@@ -81,6 +132,11 @@ function setupEventListeners() {
   const addMileageForm = document.getElementById("addMileageForm");
   if (addMileageForm) {
     addMileageForm.addEventListener("submit", saveMileage);
+  }
+
+  const mileageRoute = document.getElementById("mileageRoute");
+  if (mileageRoute) {
+    mileageRoute.addEventListener("change", applyCommonMileageRoute);
   }
 
   // Close dialog on outside click
@@ -179,6 +235,28 @@ function populatePropertyDropdown() {
       editPropertySelect.appendChild(option);
     });
   }
+}
+
+function applyCommonMileageRoute(event) {
+  const route = commonMileageRoutes.find(
+    (candidate) => String(candidate.id) === String(event.target.value),
+  );
+  if (!route) return;
+
+  document.getElementById("mileageStarting").value = route.startingLocation;
+  document.getElementById("mileageEnding").value = route.endingLocation;
+  document.getElementById("mileageMiles").value = route.miles;
+
+  const propertyId = String(route.propertyId || "");
+  const property = properties.find(
+    (candidate) => String(candidate.id) === propertyId,
+  ) ||
+    (propertyId === "632"
+      ? properties.find((candidate) =>
+          String(candidate.address || "").includes("632"),
+        )
+      : null);
+  document.getElementById("mileageProperty").value = property?.id || "";
 }
 
 function setDefaultDate() {

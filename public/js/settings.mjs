@@ -20,6 +20,7 @@ async function initializeSettingsPage() {
 
     // Load settings
     await loadSettings();
+    await loadCommonTrips();
 
     // Setup event listeners
     setupEventListeners();
@@ -56,6 +57,11 @@ function setupEventListeners() {
   const addRateForm = document.getElementById("addMileageRateForm");
   if (addRateForm) {
     addRateForm.addEventListener("submit", handleAddMileageRate);
+  }
+
+  const addCommonTripForm = document.getElementById("addCommonTripForm");
+  if (addCommonTripForm) {
+    addCommonTripForm.addEventListener("submit", handleAddCommonTrip);
   }
 }
 
@@ -339,6 +345,121 @@ function escapeHtml(text) {
 // MILEAGE RATES MANAGEMENT
 // ===================================================
 
+const DEFAULT_COMMON_TRIPS = [
+  {
+    id: "office-to-property-632",
+    name: "Office to Property 632",
+    startingLocation: "Office",
+    endingLocation: "Property 632",
+    miles: 31.7,
+    propertyId: "632",
+  },
+  {
+    id: "property-632-to-office",
+    name: "Property 632 to Office",
+    startingLocation: "Property 632",
+    endingLocation: "Office",
+    miles: 31.7,
+    propertyId: "632",
+  },
+];
+
+let commonTrips = [];
+
+async function loadCommonTrips() {
+  try {
+    const propertiesResponse = await fetch("/accounting/properties");
+    const properties = propertiesResponse.ok
+      ? await propertiesResponse.json()
+      : [];
+    const propertySelect = document.getElementById("commonTripProperty");
+    properties.forEach((property) => {
+      const option = document.createElement("option");
+      option.value = property.id;
+      option.textContent = `${property.address}, ${property.city}, ${property.state}`;
+      propertySelect.appendChild(option);
+    });
+
+    commonTrips = currentSettings.common_trips
+      ? JSON.parse(currentSettings.common_trips)
+      : DEFAULT_COMMON_TRIPS;
+    if (!Array.isArray(commonTrips)) commonTrips = DEFAULT_COMMON_TRIPS;
+  } catch (error) {
+    console.error("Error loading common trips:", error);
+    commonTrips = DEFAULT_COMMON_TRIPS;
+  }
+  displayCommonTrips();
+}
+
+function displayCommonTrips() {
+  const tbody = document.getElementById("commonTripsTableBody");
+  if (!tbody) return;
+
+  tbody.innerHTML = commonTrips.length
+    ? commonTrips
+        .map(
+          (trip) => `
+    <tr>
+      <td>${escapeHtml(String(trip.name || ""))}</td>
+      <td>${escapeHtml(String(trip.startingLocation || ""))} &rarr; ${escapeHtml(String(trip.endingLocation || ""))}</td>
+      <td>${Number(trip.miles).toFixed(1)} mi</td>
+      <td>${escapeHtml(String(trip.propertyId || "-"))}</td>
+      <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteCommonTrip('${escapeHtml(String(trip.id))}')">Delete</button></td>
+    </tr>`,
+        )
+        .join("")
+    : '<tr><td colspan="5" class="text-muted">No saved trips.</td></tr>';
+}
+
+async function handleAddCommonTrip(event) {
+  event.preventDefault();
+  const trip = {
+    id: crypto.randomUUID(),
+    name: document.getElementById("commonTripName").value.trim(),
+    startingLocation: document.getElementById("commonTripStarting").value.trim(),
+    endingLocation: document.getElementById("commonTripEnding").value.trim(),
+    miles: parseFloat(document.getElementById("commonTripMiles").value),
+    propertyId: document.getElementById("commonTripProperty").value || null,
+  };
+
+  if (
+    !trip.name ||
+    !trip.startingLocation ||
+    !trip.endingLocation ||
+    !Number.isFinite(trip.miles) ||
+    trip.miles < 0
+  ) {
+    showError("Please enter a name, both locations, and a valid distance.");
+    return;
+  }
+
+  await saveCommonTrips([...commonTrips, trip]);
+}
+
+async function deleteCommonTrip(id) {
+  await saveCommonTrips(
+    commonTrips.filter((trip) => String(trip.id) !== String(id)),
+  );
+}
+
+async function saveCommonTrips(trips) {
+  try {
+    const response = await fetch("/accounting/company-settings/common_trips", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: JSON.stringify(trips) }),
+    });
+    if (!response.ok) throw new Error("Error saving common trips");
+    commonTrips = trips;
+    displayCommonTrips();
+    document.getElementById("addCommonTripForm")?.reset();
+    showSuccess("Common trips saved successfully!");
+  } catch (error) {
+    console.error("Error saving common trips:", error);
+    showError(error.message);
+  }
+}
+
 // Hardcoded defaults shown when no DB value exists yet
 const DEFAULT_MILEAGE_RATES = {
   "2022-01-01": 0.585,
@@ -497,6 +618,7 @@ async function handleAddMileageRate(e) {
 window.editMileageRate = editMileageRate;
 window.cancelEditRate = cancelEditRate;
 window.saveMileageRate = saveMileageRate;
+window.deleteCommonTrip = deleteCommonTrip;
 
 // ===================================================
 
