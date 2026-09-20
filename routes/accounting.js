@@ -763,6 +763,10 @@ router.get("/ledger/account/:account_id", async (req, res) => {
  * Reconciles invoice status against remaining balance in the same transaction
  */
 router.post("/rent/collect", async (req, res) => {
+  return res.status(410).json({
+    error: "Rent transactions are now created as invoices and collected from the Payments page.",
+  });
+
   try {
     const { amount, property_id, owner_id, tenant_id, memo, date, invoice_id } =
       req.body;
