@@ -15,25 +15,29 @@ let mileage = [];
 // IRS standard mileage rates by year — fallback defaults
 // Source: https://www.irs.gov/tax-professionals/standard-mileage-rates
 const DEFAULT_MILEAGE_RATES = {
-  2022: 0.585, // Jan–Jun; IRS raised mid-year to 0.625 Jul–Dec
-  2023: 0.655,
-  2024: 0.67,
-  2025: 0.7,
-  2026: 0.725,
+  "2022-01-01": 0.585,
+  "2022-07-01": 0.625,
+  "2023-01-01": 0.655,
+  "2024-01-01": 0.67,
+  "2025-01-01": 0.7,
+  "2026-01-01": 0.725,
+  "2026-07-01": 0.76,
 };
 
 // Active rates — defaults merged with any values saved in Settings
 let activeRates = { ...DEFAULT_MILEAGE_RATES };
 
-function getMileageRate(year) {
-  return (
-    activeRates[year] ??
-    activeRates[Math.max(...Object.keys(activeRates).map(Number))]
-  );
+function getMileageRate(date) {
+  const dateString = typeof date === "number" ? `${date}-12-31` : date;
+  const effectiveDates = Object.keys(activeRates).sort();
+  const applicableDate = effectiveDates
+    .filter((effectiveDate) => effectiveDate <= dateString)
+    .pop();
+  return activeRates[applicableDate] ?? activeRates[effectiveDates[0]];
 }
 
 // Backwards-compat alias used by existing code
-const IRS_MILEAGE_RATE = getMileageRate(new Date().getFullYear());
+const IRS_MILEAGE_RATE = getMileageRate(new Date().toISOString().slice(0, 10));
 
 // Currently selected tax year (defaults to current calendar year)
 let selectedYear = new Date().getFullYear();
@@ -122,9 +126,12 @@ async function loadMileageRatesFromSettings() {
     if (!response.ok) return;
     const settings = await response.json();
     Object.entries(settings).forEach(([key, value]) => {
-      const match = key.match(/^mileage_rate_(\d{4})$/);
+      const match = key.match(/^mileage_rate_(\d{4})(?:-(\d{2}-\d{2}))?$/);
       if (match) {
-        activeRates[parseInt(match[1])] = parseFloat(value);
+        const effectiveDate = match[2]
+          ? `${match[1]}-${match[2]}`
+          : `${match[1]}-01-01`;
+        activeRates[effectiveDate] = parseFloat(value);
       }
     });
   } catch {
@@ -357,7 +364,11 @@ function updateStatistics() {
   );
   const tripCount = yearEntries.length;
   const avgMiles = tripCount > 0 ? totalMiles / tripCount : 0;
-  const taxDeduction = totalMiles * getMileageRate(selectedYear);
+  const taxDeduction = yearEntries.reduce(
+    (sum, entry) =>
+      sum + (parseFloat(entry.miles_driven) || 0) * getMileageRate(entry.date),
+    0,
+  );
 
   const thisMonthMilesEl = document.getElementById("thisMonthMiles");
   if (thisMonthMilesEl) thisMonthMilesEl.textContent = totalMiles.toFixed(1);
@@ -371,7 +382,7 @@ function updateStatistics() {
 
   const rateLabel = document.getElementById("taxRateLabel");
   if (rateLabel)
-    rateLabel.textContent = `${selectedYear} Rate: $${getMileageRate(selectedYear).toFixed(3)}/mi`;
+    rateLabel.textContent = `${selectedYear} rates use each trip's effective date`;
 
   const avgMilesEl = document.getElementById("avgMiles");
   if (avgMilesEl) avgMilesEl.textContent = avgMiles.toFixed(1);
@@ -415,8 +426,11 @@ function printTaxSummary() {
     (sum, e) => sum + (parseFloat(e.miles_driven) || 0),
     0,
   );
-  const yearRate = getMileageRate(selectedYear);
-  const totalDeduction = totalMiles * yearRate;
+  const totalDeduction = yearEntries.reduce(
+    (sum, entry) =>
+      sum + (parseFloat(entry.miles_driven) || 0) * getMileageRate(entry.date),
+    0,
+  );
 
   // Aggregate by category
   const byCategory = {};
@@ -437,7 +451,7 @@ function printTaxSummary() {
     .sort((a, b) => b[1] - a[1])
     .map(
       ([cat, miles]) =>
-        `<tr><td>${formatCategory(cat)}</td><td>${miles.toFixed(1)}</td><td>$${(miles * yearRate).toFixed(2)}</td></tr>`,
+        `<tr><td>${formatCategory(cat)}</td><td>${miles.toFixed(1)}</td><td>$${yearEntries.filter((e) => e.category === cat).reduce((sum, e) => sum + (parseFloat(e.miles_driven) || 0) * getMileageRate(e.date), 0).toFixed(2)}</td></tr>`,
     )
     .join("");
 
@@ -445,7 +459,7 @@ function printTaxSummary() {
     .sort((a, b) => b[1] - a[1])
     .map(
       ([prop, miles]) =>
-        `<tr><td>${prop}</td><td>${miles.toFixed(1)}</td><td>$${(miles * yearRate).toFixed(2)}</td></tr>`,
+        `<tr><td>${prop}</td><td>${miles.toFixed(1)}</td><td>$${yearEntries.filter((e) => (e.property_address || "Unassigned") === prop).reduce((sum, e) => sum + (parseFloat(e.miles_driven) || 0) * getMileageRate(e.date), 0).toFixed(2)}</td></tr>`,
     )
     .join("");
 

@@ -341,11 +341,13 @@ function escapeHtml(text) {
 
 // Hardcoded defaults shown when no DB value exists yet
 const DEFAULT_MILEAGE_RATES = {
-  2022: 0.585,
-  2023: 0.655,
-  2024: 0.67,
-  2025: 0.7,
-  2026: 0.725,
+  "2022-01-01": 0.585,
+  "2022-07-01": 0.625,
+  "2023-01-01": 0.655,
+  "2024-01-01": 0.67,
+  "2025-01-01": 0.7,
+  "2026-01-01": 0.725,
+  "2026-07-01": 0.76,
 };
 
 async function loadMileageRates() {
@@ -354,11 +356,16 @@ async function loadMileageRates() {
     if (!response.ok) throw new Error("Error loading settings");
     const settings = await response.json();
 
-    // Extract mileage_rate_YYYY keys from DB
+    // Extract date-effective keys; legacy year keys mean January 1.
     const dbRates = {};
     Object.entries(settings).forEach(([key, value]) => {
-      const match = key.match(/^mileage_rate_(\d{4})$/);
-      if (match) dbRates[parseInt(match[1])] = parseFloat(value);
+      const match = key.match(/^mileage_rate_(\d{4})(?:-(\d{2}-\d{2}))?$/);
+      if (match) {
+        const effectiveDate = match[2]
+          ? `${match[1]}-${match[2]}`
+          : `${match[1]}-01-01`;
+        dbRates[effectiveDate] = parseFloat(value);
+      }
     });
 
     // Merge: DB values take precedence over defaults
@@ -374,20 +381,20 @@ function displayMileageRates(rates, dbRates) {
   const tbody = document.getElementById("mileageRatesTableBody");
   if (!tbody) return;
 
-  const sorted = Object.entries(rates).sort((a, b) => b[0] - a[0]);
-  const isFromDb = (year) => dbRates.hasOwnProperty(year);
+  const sorted = Object.entries(rates).sort((a, b) => b[0].localeCompare(a[0]));
+  const isFromDb = (date) => Object.prototype.hasOwnProperty.call(dbRates, date);
 
   tbody.innerHTML = sorted
     .map(
-      ([year, rate]) => `
-    <tr id="rateRow_${year}">
-      <td>${year}</td>
+      ([date, rate]) => `
+    <tr id="rateRow_${date}">
+      <td>${date}</td>
       <td>
-        <span id="rateDisplay_${year}">$${parseFloat(rate).toFixed(3)}/mi</span>
-        ${!isFromDb(year) ? '<span class="badge bg-secondary ms-2" title="Default value \u2014 not yet saved to DB">default</span>' : ""}
+        <span id="rateDisplay_${date}">$${parseFloat(rate).toFixed(3)}/mi</span>
+        ${!isFromDb(date) ? '<span class="badge bg-secondary ms-2" title="Default value \u2014 not yet saved to DB">default</span>' : ""}
         <input
           type="number"
-          id="rateInput_${year}"
+          id="rateInput_${date}"
           class="form-control form-control-sm d-none"
           style="width: 110px; display: inline-block !important"
           step="0.001"
@@ -396,9 +403,9 @@ function displayMileageRates(rates, dbRates) {
         />
       </td>
       <td>
-        <button class="btn btn-sm btn-outline-secondary" id="editRateBtn_${year}" onclick="editMileageRate(${year})">Edit</button>
-        <button class="btn btn-sm btn-primary d-none" id="saveRateBtn_${year}" onclick="saveMileageRate(${year})">Save</button>
-        <button class="btn btn-sm btn-secondary d-none" id="cancelRateBtn_${year}" onclick="cancelEditRate(${year})">Cancel</button>
+        <button class="btn btn-sm btn-outline-secondary" id="editRateBtn_${date}" onclick="editMileageRate('${date}')">Edit</button>
+        <button class="btn btn-sm btn-primary d-none" id="saveRateBtn_${date}" onclick="saveMileageRate('${date}')">Save</button>
+        <button class="btn btn-sm btn-secondary d-none" id="cancelRateBtn_${date}" onclick="cancelEditRate('${date}')">Cancel</button>
       </td>
     </tr>
   `,
@@ -406,24 +413,24 @@ function displayMileageRates(rates, dbRates) {
     .join("");
 }
 
-function editMileageRate(year) {
-  document.getElementById(`rateDisplay_${year}`).classList.add("d-none");
-  document.getElementById(`rateInput_${year}`).classList.remove("d-none");
-  document.getElementById(`editRateBtn_${year}`).classList.add("d-none");
-  document.getElementById(`saveRateBtn_${year}`).classList.remove("d-none");
-  document.getElementById(`cancelRateBtn_${year}`).classList.remove("d-none");
+function editMileageRate(date) {
+  document.getElementById(`rateDisplay_${date}`).classList.add("d-none");
+  document.getElementById(`rateInput_${date}`).classList.remove("d-none");
+  document.getElementById(`editRateBtn_${date}`).classList.add("d-none");
+  document.getElementById(`saveRateBtn_${date}`).classList.remove("d-none");
+  document.getElementById(`cancelRateBtn_${date}`).classList.remove("d-none");
 }
 
-function cancelEditRate(year) {
-  document.getElementById(`rateDisplay_${year}`).classList.remove("d-none");
-  document.getElementById(`rateInput_${year}`).classList.add("d-none");
-  document.getElementById(`editRateBtn_${year}`).classList.remove("d-none");
-  document.getElementById(`saveRateBtn_${year}`).classList.add("d-none");
-  document.getElementById(`cancelRateBtn_${year}`).classList.add("d-none");
+function cancelEditRate(date) {
+  document.getElementById(`rateDisplay_${date}`).classList.remove("d-none");
+  document.getElementById(`rateInput_${date}`).classList.add("d-none");
+  document.getElementById(`editRateBtn_${date}`).classList.remove("d-none");
+  document.getElementById(`saveRateBtn_${date}`).classList.add("d-none");
+  document.getElementById(`cancelRateBtn_${date}`).classList.add("d-none");
 }
 
-async function saveMileageRate(year) {
-  const input = document.getElementById(`rateInput_${year}`);
+async function saveMileageRate(date) {
+  const input = document.getElementById(`rateInput_${date}`);
   const rate = parseFloat(input.value);
   if (isNaN(rate) || rate <= 0) {
     showError("Please enter a valid rate greater than 0");
@@ -432,7 +439,7 @@ async function saveMileageRate(year) {
 
   try {
     const response = await fetch(
-      `/accounting/company-settings/mileage_rate_${year}`,
+      `/accounting/company-settings/mileage_rate_${date}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -441,7 +448,7 @@ async function saveMileageRate(year) {
     );
     if (!response.ok) throw new Error("Error saving rate");
 
-    showSuccess(`Rate for ${year} saved: $${rate.toFixed(3)}/mi`);
+    showSuccess(`Rate from ${date} saved: $${rate.toFixed(3)}/mi`);
     setTimeout(
       () => (document.getElementById("successAlert").style.display = "none"),
       3000,
@@ -455,17 +462,17 @@ async function saveMileageRate(year) {
 
 async function handleAddMileageRate(e) {
   e.preventDefault();
-  const year = parseInt(document.getElementById("rateYear").value);
+  const date = document.getElementById("rateDate").value;
   const rate = parseFloat(document.getElementById("rateValue").value);
 
-  if (!year || isNaN(rate) || rate <= 0) {
-    showError("Please enter a valid year and rate greater than 0");
+  if (!date || isNaN(rate) || rate <= 0) {
+    showError("Please enter a valid effective date and rate greater than 0");
     return;
   }
 
   try {
     const response = await fetch(
-      `/accounting/company-settings/mileage_rate_${year}`,
+      `/accounting/company-settings/mileage_rate_${date}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -474,7 +481,7 @@ async function handleAddMileageRate(e) {
     );
     if (!response.ok) throw new Error("Error saving rate");
 
-    showSuccess(`Rate for ${year} saved: $${rate.toFixed(3)}/mi`);
+    showSuccess(`Rate from ${date} saved: $${rate.toFixed(3)}/mi`);
     document.getElementById("addMileageRateForm").reset();
     setTimeout(
       () => (document.getElementById("successAlert").style.display = "none"),

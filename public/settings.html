@@ -282,7 +282,7 @@
             <div class="card-body">
               <p class="text-muted small mb-3">
                 Rates used to calculate tax deductions on the Mileage Tracker
-                page. Update each December when the IRS announces the new rate.
+                page. Add a new effective date when the IRS changes the rate.
                 <a
                   href="https://www.irs.gov/tax-professionals/standard-mileage-rates"
                   target="_blank"
@@ -294,7 +294,7 @@
                 <table class="table table-sm" id="mileageRatesTable">
                   <thead>
                     <tr>
-                      <th>Year</th>
+                      <th>Effective date</th>
                       <th>Rate ($/mile)</th>
                       <th>Actions</th>
                     </tr>
@@ -308,13 +308,11 @@
                 <h6>Add / Update Rate</h6>
                 <form id="addMileageRateForm" class="row g-2 align-items-end">
                   <div class="col-md-3">
-                    <label for="rateYear" class="form-label">Year</label>
+                    <label for="rateDate" class="form-label">Effective date</label>
                     <input
-                      type="number"
+                      type="date"
                       class="form-control"
-                      id="rateYear"
-                      min="2000"
-                      max="2099"
+                      id="rateDate"
                       required
                     />
                   </div>
