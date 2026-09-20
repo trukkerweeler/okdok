@@ -1726,6 +1726,7 @@ router.post("/invoices", async (req, res) => {
       amount,
       invoice_date,
       due_date,
+      rent_period,
       description,
       charge_type,
       status,
@@ -1767,8 +1768,8 @@ router.post("/invoices", async (req, res) => {
         const result = await db.queryInTransaction(
           connection,
           `INSERT INTO invoices
-           (property_id, lease_id, tenant_id, owner_id, invoice_number, amount, invoice_date, due_date, description, charge_type, status, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+           (property_id, lease_id, tenant_id, owner_id, invoice_number, amount, invoice_date, due_date, rent_period, description, charge_type, status, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
           [
             property_id || null,
             lease_id || null,
@@ -1778,6 +1779,7 @@ router.post("/invoices", async (req, res) => {
             computedAmount,
             invoice_date || new Date().toISOString().split("T")[0],
             due_date || null,
+            rent_period || null,
             description || null,
             charge_type || "rent",
             status || "pending",
@@ -1816,6 +1818,7 @@ router.post("/invoices", async (req, res) => {
       amount: computedAmount,
       invoice_date: invoice_date || new Date().toISOString().split("T")[0],
       due_date,
+      rent_period,
       description: description || "Deposit + First Month Rent",
       charge_type: charge_type || "rent",
       status: status || "pending",
@@ -1850,6 +1853,7 @@ router.put("/invoices/:id", async (req, res) => {
       amount,
       invoice_date,
       due_date,
+      rent_period,
       description,
       charge_type,
       status,
@@ -1881,6 +1885,7 @@ router.put("/invoices/:id", async (req, res) => {
       amount: computedAmount,
       invoice_date,
       due_date,
+      rent_period,
       description,
       charge_type,
       status,
@@ -1925,6 +1930,33 @@ router.get("/payments", async (req, res) => {
     res.json(payments);
   } catch (error) {
     console.error("Error fetching payments:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/payments/tenant-report", async (req, res) => {
+  try {
+    const { tenant_id, start_date, due_end_date, end_date } = req.query;
+    if (!tenant_id || !start_date || !due_end_date || !end_date) {
+      return res.status(400).json({
+        error: "tenant_id, start_date, due_end_date, and end_date are required",
+      });
+    }
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    if (![start_date, due_end_date, end_date].every((date) => datePattern.test(date))) {
+      return res.status(400).json({ error: "Dates must use YYYY-MM-DD format" });
+    }
+    const tenant = await tenantRepository.getById(tenant_id);
+    if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+    const payments = await paymentRepository.getTenantMonthlyReport(
+      tenant_id,
+      start_date,
+      due_end_date,
+      end_date,
+    );
+    res.json({ tenant, start_date, end_date, payments });
+  } catch (error) {
+    console.error("Error fetching tenant payment report:", error);
     res.status(500).json({ error: error.message });
   }
 });
