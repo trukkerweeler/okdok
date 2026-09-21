@@ -6,9 +6,7 @@ const apiUrl = await getApiUrl();
 const allOwnersUrl = `${apiUrl}/accounting/owners`;
 const allPropertiesUrl = `${apiUrl}/accounting/properties`;
 const vendorsUrl = `${apiUrl}/accounting/vendors`;
-const invoicesUrl = `${apiUrl}/accounting/invoices`;
 const expensesUrl = `${apiUrl}/accounting/expenses/owner`;
-const rentUrl = `${apiUrl}/accounting/rent/collect`;
 const feesUrl = `${apiUrl}/accounting/fees/management`;
 const distributionsUrl = `${apiUrl}/accounting/distributions/owner`;
 
@@ -17,7 +15,6 @@ let owners = [];
 let properties = [];
 let vendors = [];
 let transactions = [];
-let unpaidInvoices = [];
 let currentType = "expense";
 let lastTransaction = null;
 let filterProperty = null;
@@ -54,18 +51,8 @@ function setupEventListeners() {
         .forEach((b) => b.classList.remove("active"));
       e.target.classList.add("active");
       currentType = newType;
-      updateFormForTransactionType();
     });
   });
-
-  // Property change: reload invoices for rent type
-  document
-    .getElementById("entryProperty")
-    .addEventListener("change", async (e) => {
-      if (currentType === "rent") {
-        await loadUnpaidInvoices();
-      }
-    });
 
   // Form submission
   document
@@ -76,11 +63,6 @@ function setupEventListeners() {
   document.getElementById("entryAmount").addEventListener("input", () => {
     amountManuallyEdited = true;
   });
-
-  // Invoice selection can suggest remaining balance, but should not clobber manual amounts
-  document
-    .getElementById("entryInvoice")
-    .addEventListener("change", handleInvoiceSelectionChange);
 
   // Export & Refresh
   document.getElementById("exportBtn").addEventListener("click", exportToCSV);
@@ -130,14 +112,12 @@ function setupEventListeners() {
 
 function setupKeyboardShortcuts() {
   document.addEventListener("keydown", (e) => {
-    // Ctrl/Cmd + 1,2,3,4 for transaction types
+    // Ctrl/Cmd + 1,2,3 for transaction types
     if ((e.ctrlKey || e.metaKey) && e.key === "1") {
       switchType("expense");
     } else if ((e.ctrlKey || e.metaKey) && e.key === "2") {
-      switchType("rent");
-    } else if ((e.ctrlKey || e.metaKey) && e.key === "3") {
       switchType("fee");
-    } else if ((e.ctrlKey || e.metaKey) && e.key === "4") {
+    } else if ((e.ctrlKey || e.metaKey) && e.key === "3") {
       switchType("distribution");
     }
     // Enter in amount field to submit
@@ -262,7 +242,6 @@ function switchType(type) {
       btn.classList.add("active");
     }
   });
-  updateFormForTransactionType();
 }
 
 function setTodayDate() {
@@ -304,7 +283,6 @@ async function loadOwnersAndProperties() {
     populatePropertyDropdown();
     populatePropertyFilter();
     populateVendorDropdown();
-    updateFormForTransactionType();
   } catch (error) {
     console.error("Error loading owners/properties:", error);
     showMessage("Error loading owners/properties", "error");
@@ -533,35 +511,12 @@ async function submitTransaction(e) {
   const vendor_id = document.getElementById("entryVendor").value
     ? parseInt(document.getElementById("entryVendor").value)
     : null;
-  const invoice_id = document.getElementById("entryInvoice").value
-    ? parseInt(document.getElementById("entryInvoice").value)
-    : null;
-
-  const selectedInvoice = invoice_id
-    ? unpaidInvoices.find((inv) => inv.id === invoice_id)
-    : null;
-  const resolvedPropertyId =
-    property_id || selectedInvoice?.property_id || null;
-  const resolvedOwnerId = owner_id || selectedInvoice?.owner_id || null;
-
   if (!amount) {
     showMessage("Amount is required", "error");
     return;
   }
 
-  if (currentType === "rent") {
-    if (!property_id) {
-      showMessage(
-        "Property is required before applying to an invoice",
-        "error",
-      );
-      return;
-    }
-    if (!resolvedOwnerId) {
-      showMessage("Unable to determine owner for selected property", "error");
-      return;
-    }
-  } else if (!owner_id || !property_id) {
+  if (!owner_id || !property_id) {
     showMessage("Property and Amount are required", "error");
     return;
   }
@@ -576,8 +531,8 @@ async function submitTransaction(e) {
   if (currentType === "distribution") {
     pendingDistribution = {
       amount,
-      owner_id: resolvedOwnerId,
-      property_id: resolvedPropertyId,
+      owner_id,
+      property_id,
       memo,
       date,
     };
@@ -595,18 +550,10 @@ async function submitTransaction(e) {
       payload.vendor_id = vendor_id;
     }
 
-    // Include invoice_id for rent — backend applies payment and reconciles invoice status.
-    if (currentType === "rent" && invoice_id) {
-      payload.invoice_id = invoice_id;
-    }
-
     let url;
     switch (currentType) {
       case "expense":
         url = expensesUrl;
-        break;
-      case "rent":
-        url = rentUrl;
         break;
       case "fee":
         url = feesUrl;
@@ -631,37 +578,13 @@ async function submitTransaction(e) {
     const result = await response.json();
     lastTransaction = { type: currentType, ...result };
 
-    if (currentType === "rent" && invoice_id) {
-      const inv = unpaidInvoices.find((i) => i.id === invoice_id);
-      const remaining = inv
-        ? parseFloat(inv.remaining_balance ?? inv.amount)
-        : null;
-      const isFullPayment =
-        remaining !== null && parseFloat(amount) >= remaining;
-      if (isFullPayment) {
-        showMessage(
-          `✓ RENT recorded & Invoice #${invoice_id} marked as paid`,
-          "success",
-        );
-      } else {
-        showMessage(
-          `✓ RENT recorded (partial payment on Invoice #${invoice_id})`,
-          "success",
-        );
-      }
-    } else {
-      showMessage(`✓ ${currentType.toUpperCase()} recorded`, "success");
-    }
+    showMessage(`✓ ${currentType.toUpperCase()} recorded`, "success");
 
     document.getElementById("entryForm").reset();
     amountManuallyEdited = false;
     setTodayDate();
     await loadTransactions();
     updateQuickBalances();
-    if (currentType === "rent") {
-      await loadUnpaidInvoices();
-    }
-
     // Focus back to property for next entry
     document.getElementById("entryProperty").focus();
     isSubmitting = false;

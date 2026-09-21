@@ -750,6 +750,11 @@ router.get("/ledger/account/:account_id", async (req, res) => {
  * Reconciles invoice status against remaining balance in the same transaction
  */
 router.post("/rent/collect", async (req, res) => {
+  return res.status(410).json({
+    error:
+      "Rent transactions are now created as invoices and collected from the Payments page.",
+  });
+
   try {
     const { amount, property_id, owner_id, tenant_id, memo, date, invoice_id } =
       req.body;
@@ -1900,6 +1905,39 @@ router.get("/payments", async (req, res) => {
     res.json(payments);
   } catch (error) {
     console.error("Error fetching payments:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/payments/tenant-report", async (req, res) => {
+  try {
+    const { tenant_id, start_date, due_end_date, end_date } = req.query;
+    if (!tenant_id || !start_date || !due_end_date || !end_date) {
+      return res.status(400).json({
+        error: "tenant_id, start_date, due_end_date, and end_date are required",
+      });
+    }
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    if (
+      ![start_date, due_end_date, end_date].every((date) =>
+        datePattern.test(date),
+      )
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Dates must use YYYY-MM-DD format" });
+    }
+    const tenant = await tenantRepository.getById(tenant_id);
+    if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+    const payments = await paymentRepository.getTenantMonthlyReport(
+      tenant_id,
+      start_date,
+      due_end_date,
+      end_date,
+    );
+    res.json({ tenant, start_date, end_date, payments });
+  } catch (error) {
+    console.error("Error fetching tenant payment report:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -3157,28 +3195,36 @@ router.get("/pm/income-summary", async (req, res) => {
       ),
     ]);
 
-    // Build mileage rate lookup (per year)
+    // Build date-effective mileage rate lookup. Legacy year keys mean Jan 1.
     const defaultRates = {
-      2022: 0.585,
-      2023: 0.655,
-      2024: 0.67,
-      2025: 0.7,
-      2026: 0.725,
+      "2022-01-01": 0.585,
+      "2022-07-01": 0.625,
+      "2023-01-01": 0.655,
+      "2024-01-01": 0.67,
+      "2025-01-01": 0.7,
+      "2026-01-01": 0.725,
+      "2026-07-01": 0.76,
     };
     const mileageRates = { ...defaultRates };
     rateRows.forEach(({ setting_key, setting_value }) => {
-      const m = setting_key.match(/^mileage_rate_(\d{4})$/);
-      if (m) mileageRates[parseInt(m[1])] = parseFloat(setting_value);
+      const m = setting_key.match(/^mileage_rate_(\d{4})(?:-(\d{2}-\d{2}))?$/);
+      if (m) {
+        const effectiveDate = m[2] ? `${m[1]}-${m[2]}` : `${m[1]}-01-01`;
+        mileageRates[effectiveDate] = parseFloat(setting_value);
+      }
     });
-    const sortedRateYears = Object.keys(mileageRates).map(Number).sort();
-    const getRateForYear = (y) =>
-      mileageRates[y] ??
-      mileageRates[sortedRateYears[sortedRateYears.length - 1]];
+    const sortedRateDates = Object.keys(mileageRates).sort();
+    const getRateForDate = (date) => {
+      const effectiveDate = sortedRateDates
+        .filter((candidate) => candidate <= String(date).slice(0, 10))
+        .pop();
+      return mileageRates[effectiveDate] ?? mileageRates[sortedRateDates[0]];
+    };
 
     // Attach calculated dollar value to each mileage entry
     const mileageEntriesWithValue = mileageEntries.map((e) => {
       const miles = parseFloat(e.miles_driven) || 0;
-      const rate = getRateForYear(e.year);
+      const rate = getRateForDate(e.date);
       return {
         ...e,
         rate_used: rate,
@@ -3207,11 +3253,12 @@ router.get("/pm/income-summary", async (req, res) => {
     expenseMonthly.forEach(({ year: y, month: m, pm_expenses }) => {
       monthlyMap[ensureMonth(y, m)].pm_expenses = parseFloat(pm_expenses) || 0;
     });
-    mileageMonthly.forEach(({ year: y, month: m, total_miles }) => {
-      const miles = parseFloat(total_miles) || 0;
-      const rate = getRateForYear(y);
-      monthlyMap[ensureMonth(y, m)].mileage_expense =
-        Math.round(miles * rate * 100) / 100;
+    mileageEntriesWithValue.forEach(({ date, calculated_value }) => {
+      const mileageDate = new Date(date);
+      const y = mileageDate.getUTCFullYear();
+      const m = mileageDate.getUTCMonth() + 1;
+      monthlyMap[ensureMonth(y, m)].mileage_expense +=
+        parseFloat(calculated_value) || 0;
     });
 
     const monthNames = [

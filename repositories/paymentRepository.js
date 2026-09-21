@@ -73,6 +73,50 @@ const paymentRepository = {
     return db.query(sql, [invoice_id]);
   },
 
+  getTenantMonthlyReport: async (
+    tenant_id,
+    start_date,
+    due_end_date,
+    payment_end_date,
+  ) => {
+    const sql = `
+      SELECT i.id as invoice_id, p.payment_date, i.amount as amount_due,
+        COALESCE(p.amount_paid, 0) as amount_paid,
+        GREATEST(i.amount - COALESCE(p.amount_paid, 0), 0) as balance_due,
+        p.payment_method, p.reference_number, i.invoice_number,
+        i.description as invoice_type, i.due_date,
+        COALESCE(t_direct.name, t_lease.name) as tenant_name,
+        pr.address as property_address
+      FROM invoices i
+      LEFT JOIN (
+        SELECT invoice_id, MAX(payment_date) as payment_date,
+          SUM(amount_paid) as amount_paid,
+          GROUP_CONCAT(DISTINCT payment_method ORDER BY payment_method SEPARATOR ', ') as payment_method,
+          GROUP_CONCAT(DISTINCT reference_number ORDER BY reference_number SEPARATOR ', ') as reference_number
+        FROM invoice_payments
+        WHERE payment_date <= ?
+          AND (transaction_type = 'tenant_to_manager' OR transaction_type IS NULL)
+        GROUP BY invoice_id
+      ) p ON p.invoice_id = i.id
+      LEFT JOIN leases l ON i.lease_id = l.id
+      LEFT JOIN lease_tenants lt ON l.id = lt.lease_id AND lt.tenant_id = ?
+      LEFT JOIN tenants t_direct ON i.tenant_id = t_direct.id
+      LEFT JOIN tenants t_lease ON lt.tenant_id = t_lease.id
+      LEFT JOIN properties pr ON i.property_id = pr.id
+      WHERE (i.tenant_id = ? OR lt.tenant_id IS NOT NULL)
+        AND i.due_date BETWEEN ? AND ?
+        AND i.status <> 'cancelled'
+      ORDER BY i.due_date ASC, i.id ASC
+    `;
+    return db.query(sql, [
+      payment_end_date,
+      tenant_id,
+      tenant_id,
+      start_date,
+      due_end_date,
+    ]);
+  },
+
   /**
    * Get payments for a specific owner
    */

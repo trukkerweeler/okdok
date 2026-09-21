@@ -14,6 +14,7 @@ let payments = [];
 let invoices = [];
 let paymentCheckStubs = {}; // Map of payment_id -> has_check_stub
 let paymentDepositReceipts = {}; // Map of payment_id -> has_deposit_receipt
+let filteredPayments = [];
 
 // Initialize handler function
 async function initializePayments() {
@@ -68,6 +69,19 @@ function setupEventListeners() {
   if (invoiceSelect) {
     invoiceSelect.addEventListener("change", updateBalanceDisplay);
   }
+
+  ["paymentYearFilter", "paymentMonthFilter", "paymentMethodFilter"].forEach(
+    (id) =>
+      document
+        .getElementById(id)
+        ?.addEventListener("change", refreshPaymentView),
+  );
+  document
+    .getElementById("paymentSearch")
+    ?.addEventListener("input", refreshPaymentView);
+  document
+    .getElementById("exportPaymentsBtn")
+    ?.addEventListener("click", exportPaymentsToCSV);
 }
 
 async function loadReferenceData() {
@@ -305,6 +319,7 @@ async function loadPaymentsData() {
     }
 
     payments = await response.json();
+    populateYearFilter();
     console.debug("Payments loaded:", payments);
     // if (payments.length > 0) {
     //   console.log("First payment keys:", Object.keys(payments[0]));
@@ -334,7 +349,7 @@ async function loadPaymentsData() {
     }
 
     displayPayments();
-    updateSummary();
+    updateSummary(filteredPayments);
   } catch (error) {
     console.error("Error loading payments:", error);
     alert(`Error loading payments: ${error.message}`);
@@ -345,15 +360,17 @@ function displayPayments() {
   const tbody = document.getElementById("paymentsTableBody");
   if (!tbody) return;
 
-  if (payments.length === 0) {
+  filteredPayments = getFilteredPayments();
+
+  if (filteredPayments.length === 0) {
     tbody.innerHTML =
-      '<tr><td colspan="9" class="text-center text-muted py-4">No payments recorded yet. Click + to record a payment.</td></tr>';
+      '<tr><td colspan="13" class="text-center text-muted py-4">No payments match the selected filters.</td></tr>';
     return;
   }
 
   // Calculate balance for each payment's invoice
   const paymentsByInvoice = {};
-  payments.forEach((p) => {
+  filteredPayments.forEach((p) => {
     if (!paymentsByInvoice[p.invoice_id]) {
       paymentsByInvoice[p.invoice_id] = {
         total: 0,
@@ -363,9 +380,10 @@ function displayPayments() {
     paymentsByInvoice[p.invoice_id].total += parseFloat(p.amount_paid);
   });
 
-  tbody.innerHTML = payments
+  tbody.innerHTML = filteredPayments
     .map((payment) => {
       const amountPaid = formatCurrency(payment.amount_paid);
+      const amountDue = formatCurrency(payment.invoice_amount);
       const paymentDate = formatDate(payment.payment_date);
 
       const invoiceData = paymentsByInvoice[payment.invoice_id];
@@ -385,6 +403,10 @@ function displayPayments() {
         payment.transaction_type === "manager_to_owner"
           ? escapeHtml(payment.owner_name || "—")
           : "—";
+      const documents = [
+        paymentCheckStubs[payment.id] ? "Check stub" : "",
+        paymentDepositReceipts[payment.id] ? "Deposit receipt" : "",
+      ].filter(Boolean);
 
       return `
         <tr>
@@ -392,10 +414,14 @@ function displayPayments() {
           <td>${escapeHtml(payment.property_address || "—")}</td>
           <td>${escapeHtml(payment.tenant_name || "—")}</td>
           <td>${escapeHtml(payment.invoice_type || "—")}</td>
+          <td class="text-end">${amountDue}</td>
           <td class="text-end">${amountPaid}</td>
-          <td>${paymentDate}</td>
-          <td>${recipientDisplay}</td>
           <td class="text-end">${balanceCurrency}</td>
+          <td>${paymentDate}</td>
+          <td>${escapeHtml(payment.payment_method || "—")}</td>
+          <td>${escapeHtml(payment.reference_number || "—")}</td>
+          <td>${recipientDisplay}</td>
+          <td>${escapeHtml(documents.join(", ") || "—")}</td>
           <td>
             <div class="btn-group btn-group-sm" role="group">
               ${checkStubButton}
@@ -452,16 +478,16 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function updateSummary() {
+function updateSummary(paymentsForSummary = getFilteredPayments()) {
   // Calculate total payments
-  const totalPaid = payments.reduce(
+  const totalPaid = paymentsForSummary.reduce(
     (sum, p) => sum + parseFloat(p.amount_paid),
     0,
   );
 
   // Calculate outstanding balance by invoice
   const invoiceTotals = {};
-  payments.forEach((p) => {
+  paymentsForSummary.forEach((p) => {
     if (!invoiceTotals[p.invoice_id]) {
       invoiceTotals[p.invoice_id] = {
         invoiceAmount: parseFloat(p.invoice_amount),
@@ -472,14 +498,18 @@ function updateSummary() {
   });
 
   // Add unpaid invoices
-  invoices.forEach((inv) => {
+  invoices
+    .filter((inv) =>
+      matchesDateFilter(inv.due_date || inv.invoice_date || inv.created_at),
+    )
+    .forEach((inv) => {
     if (!invoiceTotals[inv.id]) {
       invoiceTotals[inv.id] = {
         invoiceAmount: parseFloat(inv.amount),
         totalPaid: 0,
       };
     }
-  });
+    });
 
   let totalBalance = 0;
   Object.values(invoiceTotals).forEach((inv) => {
@@ -504,6 +534,124 @@ function updateSummary() {
   if (invoiceCountEl) {
     invoiceCountEl.textContent = Object.keys(invoiceTotals).length;
   }
+}
+
+function populateYearFilter() {
+  const select = document.getElementById("paymentYearFilter");
+  if (!select) return;
+
+  const currentYear = new Date().getFullYear();
+  const years = new Set([currentYear]);
+  payments.forEach((payment) => {
+    const year = getDateParts(payment.payment_date)?.year;
+    if (year) years.add(year);
+  });
+
+  const selectedYear = select.value || String(currentYear);
+  select.innerHTML = '<option value="">All years</option>';
+  [...years]
+    .sort((left, right) => right - left)
+    .forEach((year) => {
+      const option = document.createElement("option");
+      option.value = year;
+      option.textContent = year;
+      select.appendChild(option);
+    });
+  select.value = years.has(Number(selectedYear))
+    ? selectedYear
+    : String(currentYear);
+}
+
+function getDateParts(value) {
+  if (!value) return null;
+  const match = String(value).match(/^(\d{4})-(\d{2})/);
+  return match ? { year: Number(match[1]), month: Number(match[2]) } : null;
+}
+
+function matchesDateFilter(dateValue) {
+  const parts = getDateParts(dateValue);
+  if (!parts) return false;
+  const year = document.getElementById("paymentYearFilter")?.value;
+  const month = document.getElementById("paymentMonthFilter")?.value;
+  return (
+    (!year || parts.year === Number(year)) &&
+    (!month || parts.month === Number(month))
+  );
+}
+
+function getFilteredPayments() {
+  const method = document.getElementById("paymentMethodFilter")?.value || "";
+  const search = (document.getElementById("paymentSearch")?.value || "")
+    .trim()
+    .toLowerCase();
+
+  return payments.filter((payment) => {
+    if (!matchesDateFilter(payment.payment_date)) return false;
+    if (method && payment.payment_method !== method) return false;
+    if (!search) return true;
+    return [
+      payment.invoice_number,
+      payment.tenant_name,
+      payment.property_address,
+      payment.owner_name,
+      payment.reference_number,
+    ].some((value) => String(value || "").toLowerCase().includes(search));
+  });
+}
+
+function refreshPaymentView() {
+  displayPayments();
+  updateSummary(filteredPayments);
+}
+
+function exportPaymentsToCSV() {
+  const headers = [
+    "Invoice #",
+    "Property",
+    "Tenant",
+    "Type",
+    "Amount Due",
+    "Amount Paid",
+    "Balance Due",
+    "Payment Date",
+    "Method",
+    "Reference",
+    "Recipient",
+  ];
+  const rows = filteredPayments.map((payment) => {
+    const invoiceData = filteredPayments
+      .filter((item) => item.invoice_id === payment.invoice_id)
+      .reduce((total, item) => total + Number(item.amount_paid || 0), 0);
+    return [
+      payment.invoice_number,
+      payment.property_address,
+      payment.tenant_name,
+      payment.invoice_type,
+      Number(payment.invoice_amount || 0).toFixed(2),
+      Number(payment.amount_paid || 0).toFixed(2),
+      Math.max(0, Number(payment.invoice_amount || 0) - invoiceData).toFixed(2),
+      payment.payment_date,
+      payment.payment_method,
+      payment.reference_number,
+      payment.transaction_type === "manager_to_owner" ? payment.owner_name : "",
+    ];
+  });
+  const csv = [headers, ...rows]
+    .map((row) => row.map((value) => csvValue(value)).join(","))
+    .join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `payments-${document.getElementById("paymentYearFilter")?.value || "all-years"}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvValue(value) {
+  return `"${String(value ?? "").replaceAll('"', '""')}"`;
 }
 
 async function deletePayment(paymentId) {
