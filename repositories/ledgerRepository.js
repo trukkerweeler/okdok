@@ -45,6 +45,33 @@ const ledgerRepository = {
   },
 
   /**
+   * Get all landlord-reimbursable owner expenses with display fields.
+   */
+  getOwnerExpenses: async () => {
+    const sql = `
+      SELECT
+        le.*,
+        da.name AS debit_account_name,
+        ca.name AS credit_account_name,
+        o.name AS owner_name,
+        p.address AS property_address,
+        v.name AS vendor_name,
+        COALESCE(COUNT(tr.id), 0) AS receipt_count
+      FROM ledger_entries le
+      JOIN accounts da ON le.debit_account_id = da.id
+      LEFT JOIN accounts ca ON le.credit_account_id = ca.id
+      LEFT JOIN owners o ON le.owner_id = o.id
+      LEFT JOIN properties p ON le.property_id = p.id
+      LEFT JOIN vendors v ON le.vendor_id = v.id
+      LEFT JOIN transaction_receipts tr ON le.id = tr.ledger_id
+      WHERE da.name = 'Owner Expense'
+      GROUP BY le.id
+      ORDER BY le.date DESC, le.created_at DESC
+    `;
+    return db.query(sql);
+  },
+
+  /**
    * Get ledger entries by tenant
    */
   getByTenantId: async (tenant_id) => {
