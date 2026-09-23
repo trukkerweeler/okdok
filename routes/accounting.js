@@ -982,6 +982,19 @@ router.post("/expenses/owner", async (req, res) => {
 });
 
 /**
+ * GET /expenses/owner - List landlord-reimbursable expenses
+ */
+router.get("/expenses/owner", async (req, res) => {
+  try {
+    const expenses = await ledgerRepository.getOwnerExpenses();
+    res.json(expenses);
+  } catch (error) {
+    console.error("Error fetching owner expenses:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * POST /distributions/owner - Record owner distribution (atomic)
  * Debit: Owner Equity, Credit: Trust Cash
  * Wraps expense/fee validation, amount deduction, and transaction posting in single DB transaction

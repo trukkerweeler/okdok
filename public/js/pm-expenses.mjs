@@ -518,13 +518,19 @@ function exportToCSV() {
     return;
   }
 
+  const categoryMap = getCategoryMap();
+  const vendorMap = {};
+  vendors.forEach((vendor) => {
+    vendorMap[vendor.id] = vendor.name;
+  });
+
   const headers = ["Date", "Category", "Amount", "Description", "Vendor"];
   const rows = expenses.map((e) => [
     formatDateShort(e.date),
-    categoryLabels[e.category] || e.category,
-    e.amount.toFixed(2),
+    categoryMap[e.category]?.name || e.category,
+    Number.parseFloat(e.amount || 0).toFixed(2),
     e.description,
-    e.vendor || "",
+    vendorMap[e.vendor_id] || "",
   ]);
 
   const csv = [headers, ...rows]
