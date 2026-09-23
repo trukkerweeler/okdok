@@ -7,6 +7,7 @@ import { loadHeaderFooter, getSessionUser } from "./utils.mjs";
 
 let tenants = [];
 let properties = [];
+let communicationTenantId = null;
 
 /**
  * Initialize the tenants page
@@ -80,6 +81,11 @@ function setupEventListeners() {
   const addTenantForm = document.getElementById("addTenantForm");
   if (addTenantForm) {
     addTenantForm.addEventListener("submit", saveTenant);
+  }
+
+  const communicationLogForm = document.getElementById("communicationLogForm");
+  if (communicationLogForm) {
+    communicationLogForm.addEventListener("submit", saveCommunicationLogEntry);
   }
 }
 
@@ -199,6 +205,9 @@ function displayTenants() {
         </span>
       </td>
       <td>
+        <button class="btn btn-sm btn-outline-primary" onclick="openCommunicationLog(${tenant.id})" title="Open communication log">Log Contact</button>
+      </td>
+      <td>
         <button 
           class="btn btn-sm btn-warning"
           onclick="editTenant(${tenant.id})"
@@ -218,6 +227,105 @@ function displayTenants() {
   `;
     })
     .join("");
+}
+
+async function openCommunicationLog(tenantId) {
+  const tenant = tenants.find((item) => item.id === tenantId);
+  if (!tenant) return;
+  communicationTenantId = tenantId;
+  document.getElementById("communicationTenantId").value = tenantId;
+  document.getElementById("communicationTenantName").textContent = tenant.name;
+  resetCommunicationLogForm();
+  await loadCommunicationLog(tenantId);
+  document.getElementById("communicationLogDialog").showModal();
+}
+
+function resetCommunicationLogForm() {
+  document.getElementById("communicationLogForm").reset();
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  document.getElementById("communicationDate").value = now
+    .toISOString()
+    .slice(0, 16);
+}
+
+async function loadCommunicationLog(tenantId) {
+  const response = await fetch(
+    `/accounting/tenants/${tenantId}/communication-log`,
+  );
+  if (!response.ok) throw new Error("Error loading communication log");
+  const entries = await response.json();
+  const tbody = document.querySelector("#communicationLogTable tbody");
+  const empty = document.getElementById("communicationLogEmpty");
+  empty.style.display = entries.length ? "none" : "block";
+  tbody.innerHTML = entries
+    .map(
+      (entry) => `<tr>
+        <td>${formatDateTime(entry.communication_date)}</td>
+        <td>${escapeHtml(formatLabel(entry.method))}</td>
+        <td><strong>${escapeHtml(entry.subject)}</strong>${entry.notes ? `<br><small class="text-muted">${escapeHtml(entry.notes)}</small>` : ""}</td>
+        <td>${escapeHtml(formatLabel(entry.outcome))}</td>
+        <td>${entry.next_follow_up_date ? formatDate(entry.next_follow_up_date) : "—"}</td>
+        <td><button class="btn btn-sm btn-outline-danger" onclick="deleteCommunicationLog(${entry.id})" title="Delete log entry">✕</button></td>
+      </tr>`,
+    )
+    .join("");
+}
+
+async function saveCommunicationLogEntry(event) {
+  event.preventDefault();
+  const payload = {
+    communication_date: document.getElementById("communicationDate").value,
+    method: document.getElementById("communicationMethod").value,
+    outcome: document.getElementById("communicationOutcome").value,
+    subject: document.getElementById("communicationSubject").value,
+    notes: document.getElementById("communicationNotes").value || null,
+    next_follow_up_date:
+      document.getElementById("communicationNextFollowUp").value || null,
+  };
+  const response = await fetch(
+    `/accounting/tenants/${communicationTenantId}/communication-log`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!response.ok) {
+    alert("Unable to save communication log entry.");
+    return;
+  }
+  resetCommunicationLogForm();
+  await loadCommunicationLog(communicationTenantId);
+}
+
+async function deleteCommunicationLog(entryId) {
+  if (!confirm("Delete this communication log entry?")) return;
+  const response = await fetch(
+    `/accounting/tenant-communication-log/${entryId}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok) {
+    alert("Unable to delete communication log entry.");
+    return;
+  }
+  await loadCommunicationLog(communicationTenantId);
+}
+
+function formatLabel(value) {
+  return String(value || "")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatDate(value) {
+  return value
+    ? new Date(`${String(value).slice(0, 10)}T00:00:00`).toLocaleDateString()
+    : "—";
+}
+
+function formatDateTime(value) {
+  return value ? new Date(value).toLocaleString() : "—";
 }
 
 /**
@@ -292,3 +400,5 @@ document.addEventListener("DOMContentLoaded", initializeTenantsPage);
 // Export functions globally for inline onclick handlers
 window.editTenant = editTenant;
 window.deleteTenant = deleteTenant;
+window.openCommunicationLog = openCommunicationLog;
+window.deleteCommunicationLog = deleteCommunicationLog;

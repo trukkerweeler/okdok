@@ -39,6 +39,7 @@ const upload = multer({
 const ownerRepository = require("../repositories/ownerRepository");
 const propertyRepository = require("../repositories/propertyRepository");
 const tenantRepository = require("../repositories/tenantRepository");
+const tenantCommunicationLogRepository = require("../repositories/tenantCommunicationLogRepository");
 const accountRepository = require("../repositories/accountRepository");
 const ledgerRepository = require("../repositories/ledgerRepository");
 const invoiceRepository = require("../repositories/invoiceRepository");
@@ -457,6 +458,89 @@ router.get("/tenants/:id", async (req, res) => {
     res.json(tenant);
   } catch (error) {
     console.error("Error fetching tenant:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/tenants/:tenant_id/communication-log", async (req, res) => {
+  try {
+    const tenant = await tenantRepository.getById(req.params.tenant_id);
+    if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+    const entries = await tenantCommunicationLogRepository.getByTenantId(
+      req.params.tenant_id,
+    );
+    res.json(entries);
+  } catch (error) {
+    console.error("Error fetching tenant communication log:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/tenants/:tenant_id/communication-log", async (req, res) => {
+  try {
+    const tenant = await tenantRepository.getById(req.params.tenant_id);
+    if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+
+    const {
+      communication_date,
+      method,
+      subject,
+      outcome,
+      notes,
+      next_follow_up_date,
+    } = req.body;
+    const allowedMethods = new Set([
+      "call",
+      "voicemail",
+      "text",
+      "email",
+      "letter",
+      "in_person",
+      "other",
+    ]);
+    const allowedOutcomes = new Set([
+      "no_response",
+      "message_left",
+      "sent",
+      "responded",
+      "resolved",
+      "other",
+    ]);
+    if (
+      !communication_date ||
+      !subject?.trim() ||
+      !allowedMethods.has(method) ||
+      !allowedOutcomes.has(outcome)
+    ) {
+      return res.status(400).json({
+        error:
+          "communication_date, valid method, subject, and valid outcome are required",
+      });
+    }
+
+    const entry = await tenantCommunicationLogRepository.create({
+      tenant_id: req.params.tenant_id,
+      communication_date,
+      method,
+      subject: subject.trim(),
+      outcome,
+      notes,
+      next_follow_up_date,
+      created_by: req.user || null,
+    });
+    res.status(201).json(entry);
+  } catch (error) {
+    console.error("Error creating tenant communication log entry:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete("/tenant-communication-log/:id", async (req, res) => {
+  try {
+    await tenantCommunicationLogRepository.delete(req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting tenant communication log entry:", error);
     res.status(500).json({ error: error.message });
   }
 });

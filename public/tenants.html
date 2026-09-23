@@ -41,6 +41,7 @@
               <th>Phone</th>
               <th>Property</th>
               <th>Status</th>
+              <th>Communication</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -129,6 +130,124 @@
           <button type="submit" class="btn btn-primary">Save Tenant</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="communicationLogDialog" class="dialog p-0">
+      <div class="dialog-header p-3 border-bottom">
+        <h2 class="h5 mb-0">Tenant Communication Log</h2>
+        <p id="communicationTenantName" class="text-muted mb-0"></p>
+      </div>
+      <div class="p-3">
+        <form id="communicationLogForm" class="form mb-4">
+          <input type="hidden" id="communicationTenantId" />
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label for="communicationDate" class="form-label required"
+                >Date and time</label
+              >
+              <input
+                id="communicationDate"
+                type="datetime-local"
+                class="form-control"
+                required
+              />
+            </div>
+            <div class="col-md-4">
+              <label for="communicationMethod" class="form-label required"
+                >Method</label
+              >
+              <select id="communicationMethod" class="form-select" required>
+                <option value="call">Call</option>
+                <option value="voicemail">Voicemail</option>
+                <option value="text">Text</option>
+                <option value="email">Email</option>
+                <option value="letter">Letter</option>
+                <option value="in_person">In person</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label for="communicationOutcome" class="form-label required"
+                >Outcome</label
+              >
+              <select id="communicationOutcome" class="form-select" required>
+                <option value="no_response">No response</option>
+                <option value="message_left">Message left</option>
+                <option value="sent">Sent</option>
+                <option value="responded">Responded</option>
+                <option value="resolved">Resolved</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label for="communicationSubject" class="form-label required"
+                >Subject</label
+              >
+              <input
+                id="communicationSubject"
+                type="text"
+                class="form-control"
+                maxlength="255"
+                placeholder="Rent reminder, repair follow-up, notice..."
+                required
+              />
+            </div>
+            <div class="col-md-8">
+              <label for="communicationNotes" class="form-label">Notes</label>
+              <textarea
+                id="communicationNotes"
+                rows="2"
+                class="form-control"
+                placeholder="Brief factual summary"
+              ></textarea>
+            </div>
+            <div class="col-md-4">
+              <label for="communicationNextFollowUp" class="form-label"
+                >Next follow-up</label
+              >
+              <input
+                id="communicationNextFollowUp"
+                type="date"
+                class="form-control"
+              />
+            </div>
+          </div>
+          <div class="mt-3 d-flex gap-2 justify-content-end">
+            <button type="submit" class="btn btn-primary">Save Contact</button>
+          </div>
+        </form>
+
+        <div class="table-responsive">
+          <table
+            class="table table-sm table-striped"
+            id="communicationLogTable"
+          >
+            <thead class="table-light">
+              <tr>
+                <th>Date</th>
+                <th>Method</th>
+                <th>Subject</th>
+                <th>Outcome</th>
+                <th>Next Follow-up</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p id="communicationLogEmpty" class="text-muted mb-0">
+          No communication entries yet.
+        </p>
+        <div class="mt-3 d-flex justify-content-end">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick="document.getElementById('communicationLogDialog').close()"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </dialog>
 
     <script type="module" src="/js/tenants.mjs"></script>
