@@ -342,6 +342,153 @@ function populateVendorDropdown() {
   });
 }
 
+/**
+ * Update form visibility based on transaction type
+ */
+function updateFormForTransactionType() {
+  const invoiceGroup = document.getElementById("invoiceSelectionGroup");
+  if (invoiceGroup) {
+    if (currentType === "rent") {
+      invoiceGroup.style.display = "block";
+      loadUnpaidInvoices();
+    } else {
+      invoiceGroup.style.display = "none";
+      // Clear invoice selection for non-rent types
+      document.getElementById("entryInvoice").value = "";
+      amountManuallyEdited = false;
+    }
+  }
+}
+
+/**
+ * Load unpaid invoices for the selected owner and property
+ */
+async function loadUnpaidInvoices() {
+  try {
+    const property_id = document.getElementById("entryProperty").value
+      ? parseInt(document.getElementById("entryProperty").value)
+      : null;
+
+    if (!property_id) {
+      unpaidInvoices = [];
+      populateInvoiceDropdown();
+      return;
+    }
+
+    // Fetch all invoices and let remaining balance determine openness.
+    const response = await fetch(invoicesUrl, {
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      console.error("Failed to fetch invoices");
+      unpaidInvoices = [];
+      populateInvoiceDropdown();
+      return;
+    }
+
+    const allInvoices = await response.json();
+
+    // Keep non-cancelled invoices for the currently selected property only.
+    const filtered = allInvoices.filter(
+      (inv) => inv.status !== "cancelled" && inv.property_id === property_id,
+    );
+
+    // Enrich each invoice with its remaining balance (accounts for prior partial payments)
+    const balanceResults = await Promise.all(
+      filtered.map((inv) =>
+        fetch(`${apiUrl}/accounting/invoice-balance/${inv.id}`, {
+          credentials: "include",
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ),
+    );
+
+    const enrichedInvoices = filtered.map((inv, i) => ({
+      ...inv,
+      remaining_balance: balanceResults[i]?.balance ?? inv.amount,
+    }));
+
+    unpaidInvoices = enrichedInvoices.filter(
+      (inv) => parseFloat(inv.remaining_balance) > 0,
+    );
+
+    populateInvoiceDropdown();
+  } catch (error) {
+    console.error("Error loading invoices:", error);
+    unpaidInvoices = [];
+    populateInvoiceDropdown();
+  }
+}
+
+/**
+ * Populate the invoice dropdown with unpaid invoices
+ */
+function populateInvoiceDropdown() {
+  const select = document.getElementById("entryInvoice");
+  if (!select) return;
+
+  select.innerHTML = '<option value="">-- Not applied to invoice --</option>';
+
+  unpaidInvoices.forEach((inv) => {
+    const option = document.createElement("option");
+    option.value = inv.id;
+    const remaining = parseFloat(inv.remaining_balance ?? inv.amount);
+    option.dataset.amount = remaining.toFixed(2);
+    const dueDate = inv.due_date
+      ? new Date(inv.due_date).toLocaleDateString()
+      : "No due date";
+    const isPartial = remaining < parseFloat(inv.amount);
+    const balanceLabel = isPartial
+      ? `$${remaining.toFixed(2)} remaining of $${parseFloat(inv.amount).toFixed(2)}`
+      : `$${remaining.toFixed(2)}`;
+    const propertyLabel = inv.property_address
+      ? ` - ${inv.property_address}`
+      : "";
+    option.textContent = `Invoice #${inv.id}${propertyLabel} - ${balanceLabel} (Due: ${dueDate})`;
+    select.appendChild(option);
+  });
+}
+
+function handleInvoiceSelectionChange() {
+  const select = document.getElementById("entryInvoice");
+  const amountField = document.getElementById("entryAmount");
+  const propertySelect = document.getElementById("entryProperty");
+  if (!select || !amountField) return;
+
+  const selected = select.options[select.selectedIndex];
+  const selectedInvoiceId = select.value ? parseInt(select.value) : null;
+  const selectedInvoice = selectedInvoiceId
+    ? unpaidInvoices.find((inv) => inv.id === selectedInvoiceId)
+    : null;
+  const currentAmount = amountField.value.trim();
+  const hasEnteredAmount =
+    currentAmount !== "" && parseFloat(currentAmount) > 0;
+
+  // Only suggest the invoice remaining balance when amount is empty or has not been manually edited.
+  if (selected && selected.dataset.amount) {
+    if (!amountManuallyEdited || !hasEnteredAmount) {
+      amountField.value = parseFloat(selected.dataset.amount).toFixed(2);
+      amountManuallyEdited = false;
+    }
+  } else if (!selected || !selected.dataset.amount) {
+    if (!amountManuallyEdited) {
+      amountField.value = "";
+    }
+  }
+
+  // Keep property aligned with selected invoice so owner/property context is accurate.
+  if (
+    propertySelect &&
+    selectedInvoice &&
+    selectedInvoice.property_id &&
+    propertySelect.value !== String(selectedInvoice.property_id)
+  ) {
+    propertySelect.value = String(selectedInvoice.property_id);
+  }
+}
+
 async function submitTransaction(e) {
   e.preventDefault();
 
@@ -790,7 +937,7 @@ function displayTransactions() {
       console.log("Distribution transaction found:", t);
     }
 
-    const typeBadge = `<span class="log-type-badge badge-${type}" title="Transaction #${t.id}">${getTransactionTypeLabel(type)}</span>`;
+    const typeBadge = `<span class="log-type-badge badge-${type}" title="Transaction #${t.id}">${type.toUpperCase()}</span>`;
     const amount = parseFloat(t.amount) || 0;
     const propStr = t.property_id ? `#${t.property_id}` : "(no prop)";
     const vendorStr = t.vendor_id
@@ -805,9 +952,8 @@ function displayTransactions() {
           : `<span class="log-type-badge badge-unreimbursed">Pending</span>`
         : "";
 
-    // Receipts attach to any ledger entry, so allow them for every type except
-    // distributions (which use the report button instead)
-    const supportsReceipt = type !== "distribution";
+    // Add receipt indicator for expenses and rent deposits
+    const supportsReceipt = type === "expense" || type === "rent";
     const hasReceipts =
       supportsReceipt && t.receipt_count && t.receipt_count > 0;
     const receiptClass = hasReceipts ? "receipt-attached" : "receipt-empty";
@@ -1072,15 +1218,6 @@ function getTransactionType(txn) {
     ? txn.credit_account_name.toLowerCase()
     : "";
 
-  // Check specific/narrow account names before generic ones (e.g. "late fee"
-  // and "management fee" both contain "fee", so specific checks go first)
-  if (creditAcct.includes("security deposit")) return "security_deposit";
-  if (creditAcct.includes("pet deposit")) return "pet_deposit";
-  if (creditAcct.includes("late fee")) return "late_fee";
-  if (creditAcct.includes("pet fee")) return "pet_fee";
-  if (creditAcct.includes("application fee")) return "application_fee";
-  if (creditAcct.includes("utility")) return "utility_reimbursement";
-
   // Rent: Trust Cash (debit) + Rent Income (credit)
   if (creditAcct.includes("rent")) return "rent";
 
@@ -1088,38 +1225,18 @@ function getTransactionType(txn) {
   if (creditAcct.includes("management fee") || creditAcct.includes("fee"))
     return "fee";
 
-  if (creditAcct.includes("other income")) return "other_income";
-
   // Expense: Owner Expense (debit) + Trust Cash (credit)
   if (debitAcct.includes("expense")) return "expense";
 
   // Fallback: try memo as last resort
   const memoLower = txn.memo ? txn.memo.toLowerCase() : "";
 
-  if (memoLower.includes("deposit")) return "security_deposit";
   if (memoLower.includes("expense")) return "expense";
   if (memoLower.includes("rent")) return "rent";
   if (memoLower.includes("fee")) return "fee";
 
   return "transaction";
 }
-
-// Human-readable label for a transaction type (used instead of a raw
-// uppercased type string so multi-word types like "security_deposit" read well)
-const TRANSACTION_TYPE_LABELS = {
-  security_deposit: "SECURITY DEPOSIT",
-  pet_deposit: "PET DEPOSIT",
-  late_fee: "LATE FEE",
-  pet_fee: "PET FEE",
-  application_fee: "APPLICATION FEE",
-  utility_reimbursement: "UTILITY REIMB.",
-  other_income: "OTHER INCOME",
-};
-
-function getTransactionTypeLabel(type) {
-  return TRANSACTION_TYPE_LABELS[type] || type.toUpperCase();
-}
-
 
 async function undoTransaction(id) {
   try {
@@ -1154,7 +1271,7 @@ function exportToCSV() {
     formatDateShort(t.date),
     t.owner_name || "",
     parseFloat(t.amount || 0).toFixed(2),
-    getTransactionTypeLabel(getTransactionType(t)),
+    getTransactionType(t),
     t.memo || "",
   ]);
 

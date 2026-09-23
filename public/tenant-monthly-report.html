@@ -4,40 +4,88 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Tenant monthly payment receipt report." />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Abel&family=Tapestry&display=swap" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Abel&family=Tapestry&display=swap"
+    />
     <link rel="stylesheet" href="/css/styles.css" />
     <link rel="icon" href="images/okdok.png" />
     <title>Tenant Monthly Payment Report</title>
   </head>
   <body class="tenant-report-page">
     <header id="header" class="no-print"></header>
-    <div class="recordsaddrecordheading d-flex align-items-center justify-content-between my-3 no-print">
+    <div
+      class="recordsaddrecordheading d-flex align-items-center justify-content-between my-3 no-print"
+    >
       <h1 class="h3 mb-0">Tenant Monthly Payment Report</h1>
     </div>
     <main class="container my-4">
       <section class="report-controls no-print" aria-label="Report options">
         <div>
           <label for="reportTenant" class="form-label">Tenant</label>
-          <select id="reportTenant" class="form-control"><option value="">Select a tenant...</option></select>
+          <select id="reportTenant" class="form-control">
+            <option value="">Select a tenant...</option>
+          </select>
         </div>
         <div>
           <label for="reportMonth" class="form-label">Rent period</label>
           <input id="reportMonth" type="month" class="form-control" />
         </div>
-        <label class="report-toggle"><input id="includeThroughToday" type="checkbox" /> <span>Include payments received since month end through today</span></label>
-        <button id="generateReportBtn" class="btn btn-primary" type="button">Generate report</button>
+        <label class="report-toggle">
+          <input id="includeThroughToday" type="checkbox" />
+          <span>Include payments received since month end through today</span>
+        </label>
+        <button id="generateReportBtn" class="btn btn-primary" type="button">
+          Generate report
+        </button>
       </section>
-      <section class="report-sheet" aria-live="polite">
+
+      <section id="report" class="report-sheet" aria-live="polite">
         <header class="report-header">
-          <div><p class="report-kicker">Payment receipt statement</p><h2 id="reportTitle">Select a tenant and month</h2><p id="reportPeriod" class="text-muted"></p></div>
-          <button id="printReportBtn" class="btn btn-secondary no-print" type="button">Print / Save PDF</button>
+          <div>
+            <p class="report-kicker">Payment receipt statement</p>
+            <h2 id="reportTitle">Select a tenant and month</h2>
+            <p id="reportPeriod" class="text-muted"></p>
+          </div>
+          <button
+            id="printReportBtn"
+            class="btn btn-secondary no-print"
+            type="button"
+          >
+            Print / Save PDF
+          </button>
         </header>
         <div id="tenantDetails" class="report-details"></div>
         <div class="table-responsive">
-          <table class="table table-hover">
-            <thead class="table-light"><tr><th>Due Date</th><th>Invoice</th><th>Payment Date</th><th>Property</th><th>Method</th><th>Reference</th><th class="amount">Invoice Total</th><th class="amount">Paid</th><th class="amount">Balance Due</th></tr></thead>
-            <tbody id="reportTableBody"><tr><td colspan="9" class="text-center text-muted py-4">Choose report options to begin.</td></tr></tbody>
-            <tfoot><tr><th colspan="6" class="text-end">Totals</th><th id="reportAmountDue" class="amount">$0.00</th><th id="reportTotal" class="amount">$0.00</th><th id="reportBalance" class="amount">$0.00</th></tr></tfoot>
+          <table class="table table-hover" id="reportTable">
+            <thead class="table-light">
+              <tr>
+                <th>Due Date</th>
+                <th>Invoice</th>
+                <th>Payment Date</th>
+                <th>Property</th>
+                <th>Method</th>
+                <th>Reference</th>
+                <th class="amount">Invoice Total</th>
+                <th class="amount">Paid</th>
+                <th class="amount">Balance Due</th>
+              </tr>
+            </thead>
+            <tbody id="reportTableBody">
+              <tr>
+                <td colspan="9" class="text-center text-muted py-4">
+                  Choose report options to begin.
+                </td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr>
+                <th colspan="6" class="text-end">Totals</th>
+                <th id="reportAmountDue" class="amount">$0.00</th>
+                <th id="reportTotal" class="amount">$0.00</th>
+                <th id="reportBalance" class="amount">$0.00</th>
+              </tr>
+            </tfoot>
           </table>
         </div>
         <p id="reportNote" class="text-muted report-note"></p>

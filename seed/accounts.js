@@ -38,36 +38,6 @@ const seedAccounts = async () => {
         type: "income",
         name: "Management Fee Income",
       },
-      {
-        owner_id: null,
-        property_id: null,
-        type: "income",
-        name: "Late Fee Income",
-      },
-      {
-        owner_id: null,
-        property_id: null,
-        type: "income",
-        name: "Pet Fee Income",
-      },
-      {
-        owner_id: null,
-        property_id: null,
-        type: "income",
-        name: "Utility Reimbursement Income",
-      },
-      {
-        owner_id: null,
-        property_id: null,
-        type: "income",
-        name: "Application Fee Income",
-      },
-      {
-        owner_id: null,
-        property_id: null,
-        type: "income",
-        name: "Other Income",
-      },
 
       // Expense and Liability Accounts
       {
@@ -81,12 +51,6 @@ const seedAccounts = async () => {
         property_id: null,
         type: "liability",
         name: "Security Deposit Liability",
-      },
-      {
-        owner_id: null,
-        property_id: null,
-        type: "liability",
-        name: "Pet Deposit Liability",
       },
 
       // Equity Account

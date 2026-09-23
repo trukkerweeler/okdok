@@ -43,19 +43,6 @@ const companySettingsRepository = require("../repositories/companySettingsReposi
 const ledgerService = require("../services/ledgerService");
 const db = require("../repositories/db");
 
-// Maps an invoice's charge_type to the ledger account its payments post to
-const CHARGE_TYPE_ACCOUNTS = {
-  rent: "Rent Income",
-  security_deposit: "Security Deposit Liability",
-  pet_deposit: "Pet Deposit Liability",
-  late_fee: "Late Fee Income",
-  pet_fee: "Pet Fee Income",
-  utility_reimbursement: "Utility Reimbursement Income",
-  application_fee: "Application Fee Income",
-  other_income: "Other Income",
-};
-
-
 async function reconcileInvoiceStatusByBalance(invoiceId, connection = null) {
   const queryFn = connection
     ? (sql, params) => db.queryInTransaction(connection, sql, params)
@@ -764,7 +751,8 @@ router.get("/ledger/account/:account_id", async (req, res) => {
  */
 router.post("/rent/collect", async (req, res) => {
   return res.status(410).json({
-    error: "Rent transactions are now created as invoices and collected from the Payments page.",
+    error:
+      "Rent transactions are now created as invoices and collected from the Payments page.",
   });
 
   try {
@@ -776,7 +764,9 @@ router.post("/rent/collect", async (req, res) => {
       : NaN;
 
     if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
-      return res.status(400).json({ error: "Amount must be a positive number" });
+      return res
+        .status(400)
+        .json({ error: "Amount must be a positive number" });
     }
 
     // Get required accounts upfront (outside transaction — read-only)
@@ -787,8 +777,8 @@ router.post("/rent/collect", async (req, res) => {
         .json({ error: "Trust Cash Account not found. Run seed script." });
     }
 
-    let defaultRentIncomeAccount = await accountRepository.getByName("Rent Income");
-    if (!defaultRentIncomeAccount) {
+    let rentIncomeAccount = await accountRepository.getByName("Rent Income");
+    if (!rentIncomeAccount) {
       return res
         .status(400)
         .json({ error: "Rent Income Account not found. Run seed script." });
@@ -801,20 +791,6 @@ router.post("/rent/collect", async (req, res) => {
         return res.status(404).json({ error: "Invoice not found" });
       }
 
-      // Credit the account matching the invoice's charge_type (e.g. a security
-      // deposit invoice posts to the liability account, not Rent Income)
-      const incomeAccountName =
-        CHARGE_TYPE_ACCOUNTS[invoice.charge_type] || "Rent Income";
-      const incomeAccount =
-        incomeAccountName === "Rent Income"
-          ? defaultRentIncomeAccount
-          : await accountRepository.getByName(incomeAccountName);
-      if (!incomeAccount) {
-        return res.status(400).json({
-          error: `${incomeAccountName} Account not found. Run seed script.`,
-        });
-      }
-
       // Atomic: post ledger entry + record payment + reconcile invoice status
       const entry = await db.transaction(async (connection) => {
         const insertSql = `
@@ -825,7 +801,7 @@ router.post("/rent/collect", async (req, res) => {
         const result = await db.queryInTransaction(connection, insertSql, [
           date,
           trustAccount.id,
-          incomeAccount.id,
+          rentIncomeAccount.id,
           normalizedAmount,
           memo || `Rent collected for property ${property_id}`,
           property_id || null,
@@ -866,7 +842,7 @@ router.post("/rent/collect", async (req, res) => {
           id: result.insertId,
           date,
           debit_account_id: trustAccount.id,
-          credit_account_id: incomeAccount.id,
+          credit_account_id: rentIncomeAccount.id,
           amount: normalizedAmount,
           memo: memo || `Rent collected for property ${property_id}`,
           property_id: property_id || null,
@@ -883,7 +859,7 @@ router.post("/rent/collect", async (req, res) => {
     // No invoice — simple ledger post
     const entry = await ledgerService.postTransaction({
       debit_account_id: trustAccount.id,
-      credit_account_id: defaultRentIncomeAccount.id,
+      credit_account_id: rentIncomeAccount.id,
       amount: normalizedAmount,
       memo: memo || `Rent collected for property ${property_id}`,
       property_id,
@@ -1745,7 +1721,6 @@ router.post("/invoices", async (req, res) => {
       due_date,
       rent_period,
       description,
-      charge_type,
       status,
       notes,
       line_items,
@@ -1785,8 +1760,8 @@ router.post("/invoices", async (req, res) => {
         const result = await db.queryInTransaction(
           connection,
           `INSERT INTO invoices
-           (property_id, lease_id, tenant_id, owner_id, invoice_number, amount, invoice_date, due_date, rent_period, description, charge_type, status, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+           (property_id, lease_id, tenant_id, owner_id, invoice_number, amount, invoice_date, due_date, rent_period, description, status, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
           [
             property_id || null,
             lease_id || null,
@@ -1798,7 +1773,6 @@ router.post("/invoices", async (req, res) => {
             due_date || null,
             rent_period || null,
             description || null,
-            charge_type || "rent",
             status || "pending",
             notes || null,
           ],
@@ -1837,7 +1811,6 @@ router.post("/invoices", async (req, res) => {
       due_date,
       rent_period,
       description: description || "Deposit + First Month Rent",
-      charge_type: charge_type || "rent",
       status: status || "pending",
       notes,
     });
@@ -1872,7 +1845,6 @@ router.put("/invoices/:id", async (req, res) => {
       due_date,
       rent_period,
       description,
-      charge_type,
       status,
       notes,
       line_items,
@@ -1904,7 +1876,6 @@ router.put("/invoices/:id", async (req, res) => {
       due_date,
       rent_period,
       description,
-      charge_type,
       status,
       notes,
     });
@@ -1960,8 +1931,14 @@ router.get("/payments/tenant-report", async (req, res) => {
       });
     }
     const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-    if (![start_date, due_end_date, end_date].every((date) => datePattern.test(date))) {
-      return res.status(400).json({ error: "Dates must use YYYY-MM-DD format" });
+    if (
+      ![start_date, due_end_date, end_date].every((date) =>
+        datePattern.test(date),
+      )
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Dates must use YYYY-MM-DD format" });
     }
     const tenant = await tenantRepository.getById(tenant_id);
     if (!tenant) return res.status(404).json({ error: "Tenant not found" });
@@ -1969,6 +1946,49 @@ router.get("/payments/tenant-report", async (req, res) => {
       tenant_id,
       start_date,
       due_end_date,
+      end_date,
+    );
+    res.json({ tenant, start_date, end_date, payments });
+  } catch (error) {
+    console.error("Error fetching tenant payment report:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /payments/tenant-report - Get a tenant's receipts for a rent period
+ * start_date must be the first day of the target rent period (e.g. 2026-08-01);
+ * end_date bounds payment_date (month-end, or today when the "through today" toggle is on).
+ */
+router.get("/payments/tenant-report", async (req, res) => {
+  try {
+    const { tenant_id, start_date, end_date } = req.query;
+    if (!tenant_id || !start_date || !end_date) {
+      return res.status(400).json({
+        error: "tenant_id, start_date, and end_date are required",
+      });
+    }
+
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    if (!datePattern.test(start_date) || !datePattern.test(end_date)) {
+      return res
+        .status(400)
+        .json({ error: "Dates must use YYYY-MM-DD format" });
+    }
+    if (!start_date.endsWith("-01")) {
+      return res
+        .status(400)
+        .json({ error: "start_date must be the first day of the rent period" });
+    }
+
+    const tenant = await tenantRepository.getById(tenant_id);
+    if (!tenant) {
+      return res.status(404).json({ error: "Tenant not found" });
+    }
+
+    const payments = await paymentRepository.getTenantMonthlyReport(
+      tenant_id,
+      start_date,
       end_date,
     );
     res.json({ tenant, start_date, end_date, payments });
@@ -2069,13 +2089,15 @@ router.post("/payments", async (req, res) => {
 
     // Read-only account lookups (outside transaction), matching /rent/collect
     let trustAccount = await accountRepository.getByName("Trust Cash Account");
-    const chargeTypeAccountName =
-      CHARGE_TYPE_ACCOUNTS[invoice.charge_type] ||
-      // Legacy fallback for invoices predating charge_type: guess from description text
-      (invoice.description && invoice.description.toLowerCase().includes("deposit")
-        ? "Security Deposit Liability"
-        : "Rent Income");
-    let incomeAccount = await accountRepository.getByName(chargeTypeAccountName);
+    let incomeAccount = await accountRepository.getByName("Rent Income");
+    if (
+      invoice.description &&
+      invoice.description.toLowerCase().includes("deposit")
+    ) {
+      incomeAccount = await accountRepository.getByName(
+        "Security Deposit Liability",
+      );
+    }
 
     const resolvedPaymentDate =
       payment_date || new Date().toISOString().split("T")[0];
@@ -3200,9 +3222,7 @@ router.get("/pm/income-summary", async (req, res) => {
     rateRows.forEach(({ setting_key, setting_value }) => {
       const m = setting_key.match(/^mileage_rate_(\d{4})(?:-(\d{2}-\d{2}))?$/);
       if (m) {
-        const effectiveDate = m[2]
-          ? `${m[1]}-${m[2]}`
-          : `${m[1]}-01-01`;
+        const effectiveDate = m[2] ? `${m[1]}-${m[2]}` : `${m[1]}-01-01`;
         mileageRates[effectiveDate] = parseFloat(setting_value);
       }
     });

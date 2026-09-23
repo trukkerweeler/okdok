@@ -64,7 +64,8 @@ const paymentRepository = {
       LEFT JOIN invoices i ON p.invoice_id = i.id
       LEFT JOIN leases l ON i.lease_id = l.id
       LEFT JOIN lease_tenants lt ON l.id = lt.lease_id AND lt.is_primary = TRUE
-      LEFT JOIN tenants t ON lt.tenant_id = t.id
+        LEFT JOIN tenants t_direct ON i.tenant_id = t_direct.id
+        LEFT JOIN tenants t ON lt.tenant_id = t.id
       LEFT JOIN owners o ON i.owner_id = o.id
       WHERE p.invoice_id = ?
       ORDER BY p.payment_date DESC
@@ -150,6 +151,47 @@ const paymentRepository = {
       ORDER BY p.payment_date DESC
     `;
     return db.query(sql, [owner_id]);
+  },
+
+  /**
+   * Get a tenant's payments for a report period.
+   *
+   * Filters by the invoice's rent_period (the month the charge covers),
+   * not payment_date, so a late payment (e.g. July rent paid in August)
+   * is correctly excluded from the August report. Invoices without an
+   * explicit rent_period fall back to their invoice_date's month.
+   * end_date still bounds payment_date so future/unposted payments
+   * and the "include through today" toggle work as expected.
+   */
+  getTenantMonthlyReport: async (tenant_id, rent_period, end_date) => {
+    const sql = `
+      SELECT
+        p.id,
+        p.payment_date,
+        p.amount_paid,
+        p.payment_method,
+        p.reference_number,
+        p.notes,
+        p.transaction_type,
+        i.invoice_number,
+        i.description as invoice_type,
+        COALESCE(i.rent_period, DATE_FORMAT(i.invoice_date, '%Y-%m-01')) as rent_period,
+        COALESCE(t_direct.name, t_lease.name) as tenant_name,
+        pr.address as property_address
+      FROM invoice_payments p
+      LEFT JOIN invoices i ON p.invoice_id = i.id
+      LEFT JOIN leases l ON i.lease_id = l.id
+      LEFT JOIN lease_tenants lt ON l.id = lt.lease_id AND lt.is_primary = TRUE
+      LEFT JOIN tenants t_direct ON i.tenant_id = t_direct.id
+      LEFT JOIN tenants t_lease ON lt.tenant_id = t_lease.id
+      LEFT JOIN properties pr ON i.property_id = pr.id
+      WHERE (i.tenant_id = ? OR lt.tenant_id = ?)
+        AND COALESCE(i.rent_period, DATE_FORMAT(i.invoice_date, '%Y-%m-01')) = ?
+        AND p.payment_date <= ?
+        AND (p.transaction_type = 'tenant_to_manager' OR p.transaction_type IS NULL)
+      ORDER BY p.payment_date ASC, p.id ASC
+    `;
+    return db.query(sql, [tenant_id, tenant_id, rent_period, end_date]);
   },
 
   /**
