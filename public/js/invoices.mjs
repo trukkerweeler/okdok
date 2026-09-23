@@ -59,6 +59,20 @@ function setupEventListeners() {
     addInvoiceForm.addEventListener("submit", saveInvoice);
   }
 
+  const invoiceDateInput = document.getElementById("invoiceDate");
+  if (invoiceDateInput) {
+    invoiceDateInput.addEventListener("change", () =>
+      updateWeekFromDate(invoiceDateInput.value),
+    );
+  }
+
+  const invoiceWeekInput = document.getElementById("invoiceWeek");
+  if (invoiceWeekInput) {
+    invoiceWeekInput.addEventListener("change", () =>
+      updateDateFromWeek(invoiceWeekInput.value),
+    );
+  }
+
   // Close dialog on outside click
   const addInvoiceDialog = document.getElementById("addInvoiceDialog");
   if (addInvoiceDialog) {
@@ -324,6 +338,7 @@ function setDefaultDate() {
   if (dateInput) {
     const today = new Date().toISOString().split("T")[0];
     dateInput.value = today;
+    updateWeekFromDate(today);
   }
 
   const rentPeriodInput = document.getElementById("invoiceRentPeriod");
@@ -331,18 +346,72 @@ function setDefaultDate() {
     const now = new Date();
     rentPeriodInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   }
+}
 
+function getIsoWeekInfo(dateValue) {
+  const [year, month, day] = dateValue.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, 12));
+  if (!dateValue || Number.isNaN(date.getTime())) return null;
+
+  const monday = new Date(date);
+  monday.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  const thursday = new Date(monday);
+  thursday.setUTCDate(monday.getUTCDate() + 3);
+  const jan4 = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 4, 12));
+  const firstMonday = new Date(jan4);
+  firstMonday.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7));
+  const week =
+    Math.floor((monday - firstMonday) / (7 * 24 * 60 * 60 * 1000)) + 1;
+
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  return { year: thursday.getUTCFullYear(), week, monday, sunday };
+}
+
+function dateInputValue(date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function formatWeekDates(weekInfo) {
+  const options = { month: "short", day: "numeric", year: "numeric" };
+  return `${weekInfo.monday.toLocaleDateString("en-US", options)} – ${weekInfo.sunday.toLocaleDateString("en-US", options)}`;
+}
+
+function updateWeekFromDate(dateValue) {
+  const weekInput = document.getElementById("invoiceWeek");
+  const datesLabel = document.getElementById("invoiceWeekDates");
   const badge = document.getElementById("currentWeekBadge");
-  if (badge) {
-    const now = new Date();
-    // ISO week: week containing the Thursday of that week
-    const jan4 = new Date(now.getFullYear(), 0, 4);
-    const startOfWeek1 = new Date(jan4);
-    startOfWeek1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
-    const week =
-      Math.floor((now - startOfWeek1) / (7 * 24 * 60 * 60 * 1000)) + 1;
-    badge.textContent = `Wk ${week}`;
+  const weekInfo = getIsoWeekInfo(dateValue);
+  if (!weekInfo) return;
+
+  if (weekInput) {
+    weekInput.value = `${weekInfo.year}-W${String(weekInfo.week).padStart(2, "0")}`;
   }
+  if (datesLabel) datesLabel.textContent = formatWeekDates(weekInfo);
+  if (badge) badge.textContent = `Wk ${weekInfo.week}`;
+}
+
+function updateDateFromWeek(weekValue) {
+  const match = /^(\d{4})-W(\d{2})$/.exec(weekValue);
+  if (!match) return;
+
+  const year = Number(match[1]);
+  const week = Number(match[2]);
+  const jan4 = new Date(Date.UTC(year, 0, 4, 12));
+  const firstMonday = new Date(jan4);
+  firstMonday.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7));
+  firstMonday.setUTCDate(firstMonday.getUTCDate() + (week - 1) * 7);
+
+  const dateInput = document.getElementById("invoiceDate");
+  if (dateInput) dateInput.value = dateInputValue(firstMonday);
+
+  const selectedDate = dateInput?.value;
+  const weekInfo = getIsoWeekInfo(selectedDate);
+  const datesLabel = document.getElementById("invoiceWeekDates");
+  const badge = document.getElementById("currentWeekBadge");
+  if (datesLabel && weekInfo)
+    datesLabel.textContent = formatWeekDates(weekInfo);
+  if (badge) badge.textContent = `Wk ${week}`;
 }
 
 async function openAddInvoiceDialog() {
@@ -408,14 +477,17 @@ async function saveInvoice(event) {
     const line_items = [];
     lineItemRows.forEach((row) => {
       const desc = row.querySelector(".line-item-desc").value.trim();
+      const category = row.querySelector(".line-item-category").value;
       const amt = parseFloat(row.querySelector(".line-item-amount").value);
-      if (desc && !isNaN(amt) && amt > 0) {
-        line_items.push({ description: desc, amount: amt });
+      if (desc && category && !isNaN(amt) && amt > 0) {
+        line_items.push({ description: desc, category, amount: amt });
       }
     });
 
     if (line_items.length === 0) {
-      alert("Please add at least one line item with a description and amount.");
+      alert(
+        "Please add at least one line item with a category, description, and amount.",
+      );
       return;
     }
 
@@ -518,7 +590,7 @@ function displayInvoices() {
 
   if (invoices.length === 0) {
     tbody.innerHTML =
-      '<tr><td colspan="9" class="text-center text-muted py-4">No invoices found. Click + to create one.</td></tr>';
+      '<tr><td colspan="10" class="text-center text-muted py-4">No invoices found. Click + to create one.</td></tr>';
     return;
   }
 
@@ -545,6 +617,10 @@ function displayInvoices() {
     .map((invoice) => {
       const statusBadgeClass = getStatusBadgeClass(invoice.status);
       const invoiceDate = formatDate(invoice.invoice_date);
+      const weekInfo = getIsoWeekInfo(invoice.invoice_date);
+      const reportingWeek = weekInfo
+        ? `Week ${weekInfo.week}<br><small class="text-muted">${escapeHtml(formatWeekDates(weekInfo))}</small>`
+        : "—";
       const dueDate = invoice.due_date ? formatDate(invoice.due_date) : "—";
       const address = invoice.property_address || "—";
       const shadeClass = addressColorMap[address];
@@ -575,6 +651,7 @@ function displayInvoices() {
           <td>${escapeHtml(invoice.lease_number || "—")}</td>
           <td class="text-end">${amountCell}</td>
           <td>${invoiceDate}</td>
+          <td>${reportingWeek}</td>
           <td>${dueDate}</td>
           <td><span class="badge ${statusBadgeClass}">${escapeHtml(invoice.status)}</span>${partialBadge}</td>
           <td>
@@ -701,12 +778,21 @@ function initLineItems() {
   recalcLineItemsTotal();
 }
 
-function addLineItem(desc = "", amount = "") {
+function addLineItem(desc = "", amount = "", category = "") {
   const container = document.getElementById("lineItemsContainer");
   if (!container) return;
   const row = document.createElement("div");
   row.className = "line-item-row d-flex gap-2 align-items-center mb-2";
   row.innerHTML = `
+    <select class="form-control form-control-sm line-item-category" required aria-label="Charge category">
+      <option value="">Category...</option>
+      <option value="rent" ${category === "rent" ? "selected" : ""}>Rent</option>
+      <option value="late_fee" ${category === "late_fee" ? "selected" : ""}>Late fee</option>
+      <option value="security_deposit" ${category === "security_deposit" ? "selected" : ""}>Security deposit</option>
+      <option value="utility" ${category === "utility" ? "selected" : ""}>Utility</option>
+      <option value="repair" ${category === "repair" ? "selected" : ""}>Repair</option>
+      <option value="other" ${category === "other" ? "selected" : ""}>Other</option>
+    </select>
     <input type="text" class="form-control form-control-sm line-item-desc" placeholder="Description (e.g., Weekly rent)" value="${escapeHtml(String(desc))}" />
     <input type="number" class="form-control form-control-sm line-item-amount" placeholder="0.00" step="0.01" min="0" value="${amount}" />
     <button type="button" class="btn btn-sm btn-outline-danger line-item-remove" title="Remove">✕</button>
@@ -735,6 +821,10 @@ function recalcLineItemsTotal() {
 
 function generateInvoiceHTML(invoice, settings = {}) {
   const invoiceDate = formatDate(invoice.invoice_date);
+  const weekInfo = getIsoWeekInfo(invoice.invoice_date);
+  const reportingWeek = weekInfo
+    ? `Week ${weekInfo.week} (${formatWeekDates(weekInfo)})`
+    : "Not specified";
   const dueDate = invoice.due_date
     ? formatDate(invoice.due_date)
     : "Not specified";
@@ -762,6 +852,7 @@ function generateInvoiceHTML(invoice, settings = {}) {
         <div style="text-align: right;">
           <p style="margin: 0; font-weight: bold;">Invoice #: ${escapeHtml(invoice.invoice_number)}</p>
           <p style="margin: 5px 0;">Date: ${invoiceDate}</p>
+          <p style="margin: 5px 0;">Reporting week: ${escapeHtml(reportingWeek)}</p>
           <p style="margin: 5px 0;">Due: ${dueDate}</p>
         </div>
       </div>
@@ -814,7 +905,7 @@ function generateInvoiceHTML(invoice, settings = {}) {
                   .map(
                     (item) => `
           <tr style="border-bottom: 1px solid #ddd;">
-            <td style="padding: 12px; text-align: left;">${escapeHtml(item.description)}</td>
+            <td style="padding: 12px; text-align: left;">${escapeHtml(formatCategory(item.category))}${item.category ? " - " : ""}${escapeHtml(item.description)}</td>
             <td style="padding: 12px; text-align: right; font-weight: bold;">${formatCurrency(parseFloat(item.amount))}</td>
           </tr>`,
                   )
@@ -857,6 +948,18 @@ function generateInvoiceHTML(invoice, settings = {}) {
       </div>
     </div>
   `;
+}
+
+function formatCategory(category) {
+  const labels = {
+    rent: "Rent",
+    late_fee: "Late fee",
+    security_deposit: "Security deposit",
+    utility: "Utility",
+    repair: "Repair",
+    other: "Other",
+  };
+  return labels[category] || "";
 }
 
 function printInvoice() {

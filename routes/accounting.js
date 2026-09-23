@@ -6,6 +6,15 @@ const express = require("express");
 const multer = require("multer");
 const router = express.Router();
 
+const invoiceLineItemCategories = new Set([
+  "rent",
+  "late_fee",
+  "security_deposit",
+  "utility",
+  "repair",
+  "other",
+]);
+
 // Multer configuration for file uploads (max 10MB per file)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -1720,9 +1729,15 @@ router.post("/invoices", async (req, res) => {
     let computedAmount = amount ? parseFloat(amount) : 0;
     if (line_items && line_items.length > 0) {
       for (const item of line_items) {
-        if (!item.description || item.amount == null) {
+        if (!item.description || item.amount == null || !item.category) {
           return res.status(400).json({
-            error: "Each line item requires a description and amount",
+            error:
+              "Each line item requires a category, description, and amount",
+          });
+        }
+        if (item.category && !invoiceLineItemCategories.has(item.category)) {
+          return res.status(400).json({
+            error: `Unsupported line item category: ${item.category}`,
           });
         }
       }
@@ -1768,10 +1783,11 @@ router.post("/invoices", async (req, res) => {
         for (let i = 0; i < line_items.length; i++) {
           await db.queryInTransaction(
             connection,
-            `INSERT INTO invoice_line_items (invoice_id, description, amount, sort_order) VALUES (?, ?, ?, ?)`,
+            `INSERT INTO invoice_line_items (invoice_id, description, category, amount, sort_order) VALUES (?, ?, ?, ?, ?)`,
             [
               id,
               line_items[i].description,
+              line_items[i].category || null,
               parseFloat(line_items[i].amount),
               i,
             ],
@@ -1840,9 +1856,15 @@ router.put("/invoices/:id", async (req, res) => {
     let computedAmount = amount ? parseFloat(amount) : null;
     if (line_items && line_items.length > 0) {
       for (const item of line_items) {
-        if (!item.description || item.amount == null) {
+        if (!item.description || item.amount == null || !item.category) {
           return res.status(400).json({
-            error: "Each line item requires a description and amount",
+            error:
+              "Each line item requires a category, description, and amount",
+          });
+        }
+        if (item.category && !invoiceLineItemCategories.has(item.category)) {
+          return res.status(400).json({
+            error: `Unsupported line item category: ${item.category}`,
           });
         }
       }
@@ -1933,49 +1955,6 @@ router.get("/payments/tenant-report", async (req, res) => {
       tenant_id,
       start_date,
       due_end_date,
-      end_date,
-    );
-    res.json({ tenant, start_date, end_date, payments });
-  } catch (error) {
-    console.error("Error fetching tenant payment report:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * GET /payments/tenant-report - Get a tenant's receipts for a rent period
- * start_date must be the first day of the target rent period (e.g. 2026-08-01);
- * end_date bounds payment_date (month-end, or today when the "through today" toggle is on).
- */
-router.get("/payments/tenant-report", async (req, res) => {
-  try {
-    const { tenant_id, start_date, end_date } = req.query;
-    if (!tenant_id || !start_date || !end_date) {
-      return res.status(400).json({
-        error: "tenant_id, start_date, and end_date are required",
-      });
-    }
-
-    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-    if (!datePattern.test(start_date) || !datePattern.test(end_date)) {
-      return res
-        .status(400)
-        .json({ error: "Dates must use YYYY-MM-DD format" });
-    }
-    if (!start_date.endsWith("-01")) {
-      return res
-        .status(400)
-        .json({ error: "start_date must be the first day of the rent period" });
-    }
-
-    const tenant = await tenantRepository.getById(tenant_id);
-    if (!tenant) {
-      return res.status(404).json({ error: "Tenant not found" });
-    }
-
-    const payments = await paymentRepository.getTenantMonthlyReport(
-      tenant_id,
-      start_date,
       end_date,
     );
     res.json({ tenant, start_date, end_date, payments });

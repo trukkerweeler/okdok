@@ -54,6 +54,9 @@
         flex-shrink: 0;
         -moz-appearance: textfield;
       }
+      .line-item-row .line-item-category {
+        width: 180px;
+      }
       .line-item-row .line-item-amount::-webkit-outer-spin-button,
       .line-item-row .line-item-amount::-webkit-inner-spin-button {
         -webkit-appearance: none;
@@ -168,6 +171,14 @@
             </div>
 
             <div class="col-md-6">
+              <label for="invoiceWeek" class="form-label">Reporting Week</label>
+              <input type="week" id="invoiceWeek" class="form-control" />
+              <small id="invoiceWeekDates" class="text-muted"
+                >Select a week to use its Monday as the invoice date.</small
+              >
+            </div>
+
+            <div class="col-md-6">
               <label for="invoiceRentPeriod" class="form-label"
                 >Rent Period</label
               >
@@ -195,6 +206,10 @@
 
             <div class="col-12" id="lineItemsSection">
               <label class="form-label required">Line Items</label>
+              <small class="form-text text-muted d-block mb-2"
+                >Choose a category for each charge so mixed invoices can be
+                reported accurately.</small
+              >
               <div id="lineItemsContainer"></div>
               <button
                 type="button"
@@ -283,6 +298,7 @@
               <th>Lease</th>
               <th>Amount</th>
               <th>Invoice Date</th>
+              <th>Reporting Week</th>
               <th>Due Date</th>
               <th>Status</th>
               <th>Actions</th>
@@ -290,7 +306,7 @@
           </thead>
           <tbody id="invoicesTableBody">
             <tr>
-              <td colspan="9" class="text-center text-muted py-4">
+              <td colspan="10" class="text-center text-muted py-4">
                 Loading invoices...
               </td>
             </tr>

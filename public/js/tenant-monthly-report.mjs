@@ -116,10 +116,10 @@ function renderPayments(payments) {
     ? payments
         .map(
           (payment) =>
-            `<tr><td>${formatDate(payment.due_date)}</td><td>${escapeHtml(payment.invoice_number || "-")}</td><td>${formatDate(payment.payment_date)}</td><td>${escapeHtml(payment.property_address || "-")}</td><td>${escapeHtml(payment.payment_method || "-")}</td><td>${escapeHtml(payment.reference_number || "-")}</td><td class="amount">${currency.format(Number(payment.amount_due || 0))}</td><td class="amount">${currency.format(Number(payment.amount_paid || 0))}</td><td class="amount">${currency.format(Number(payment.balance_due || 0))}</td></tr>`,
+            `<tr><td>${formatDate(payment.due_date)}</td><td>${escapeHtml(payment.invoice_number || "-")}</td><td>${escapeHtml(payment.invoice_type || "-")}</td><td>${formatDate(payment.payment_date)}</td><td>${escapeHtml(payment.property_address || "-")}</td><td>${escapeHtml(payment.payment_method || "-")}</td><td>${escapeHtml(payment.reference_number || "-")}</td><td class="amount">${currency.format(Number(payment.amount_due || 0))}</td><td class="amount">${currency.format(Number(payment.amount_paid || 0))}</td><td class="amount">${currency.format(Number(payment.balance_due || 0))}</td></tr>`,
         )
         .join("")
-    : '<tr><td colspan="9" class="text-center text-muted py-4">No invoices found for this period.</td></tr>';
+    : '<tr><td colspan="10" class="text-center text-muted py-4">No invoices found for this period.</td></tr>';
   document.getElementById("reportAmountDue").textContent =
     currency.format(totalDue);
   document.getElementById("reportTotal").textContent =
