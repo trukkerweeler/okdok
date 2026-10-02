@@ -88,7 +88,7 @@ async function generateReport() {
   document.getElementById("reportTitle").textContent =
     `${report.tenant.name} - Payment Summary`;
   document.getElementById("reportPeriod").textContent =
-    `Invoices due: ${formatMonth(start)}${document.getElementById("includeThroughToday").checked ? ` (receipts through ${formatDate(paymentEnd)})` : " (receipts received by month end)"}`;
+    `Rent period: ${formatMonth(start)}${document.getElementById("includeThroughToday").checked ? ` (receipts through ${formatDate(paymentEnd)})` : " (receipts received by month end)"}`;
   document.getElementById("tenantDetails").textContent = [
     report.tenant.email,
     report.tenant.phone,
@@ -132,8 +132,8 @@ function renderPayments(payments) {
   document.getElementById("reportNote").textContent = document.getElementById(
     "includeThroughToday",
   ).checked
-    ? "This report includes payments for invoices due in the selected month, including receipts received through today."
-    : "This report includes payments for invoices due in the selected month, with receipts received by month end.";
+    ? "This report includes invoices for the selected rent period, including receipts received through today."
+    : "This report includes invoices for the selected rent period, with receipts received by month end.";
 }
 
 function formatDate(value) {

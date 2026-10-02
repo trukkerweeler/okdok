@@ -12,6 +12,15 @@ const isDevelopment = nodeEnv === "development";
 const isProduction = nodeEnv === "production";
 // Dev environment should always use port 3002
 const port = isDevelopment ? 3002 : process.env.PORT || configPort || 3002;
+const sessionMaxAgeDays = Number(process.env.SESSION_MAX_AGE_DAYS || 30);
+const sessionMaxAgeMs = sessionMaxAgeDays * 24 * 60 * 60 * 1000;
+if (
+  !Number.isFinite(sessionMaxAgeDays) ||
+  sessionMaxAgeDays <= 0 ||
+  !Number.isFinite(sessionMaxAgeMs)
+) {
+  throw new Error("SESSION_MAX_AGE_DAYS must be a positive number");
+}
 
 // Configure CORS to allow credentials
 const corsOptions = {
@@ -47,10 +56,50 @@ app.use(
     cookie: {
       secure: isProduction, // Set to true in production with HTTPS
       httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: "lax",
+      maxAge: sessionMaxAgeMs,
     },
   }),
 );
+
+app.use(express.json());
+
+// Keep authentication endpoints and the assets used by the login page public.
+const publicAuthPaths = new Set([
+  "/login.html",
+  "/auth/login",
+  "/auth/logout",
+  "/auth/status",
+  "/auth/me",
+  "/api/config",
+]);
+app.use((req, res, next) => {
+  const publicAsset = /^\/(css|js|images|partials)\//.test(req.path);
+  if (publicAuthPaths.has(req.path) || publicAsset) {
+    return next();
+  }
+
+  if (req.session && req.session.user) {
+    req.user = req.session.user;
+    return next();
+  }
+
+  if (req.method === "GET" && (req.path === "/" || /\.html$/.test(req.path))) {
+    const destination =
+      req.path === "/" || req.path === "/index.html"
+        ? "/transactions.html"
+        : req.originalUrl;
+    return res.redirect(
+      302,
+      `/login.html?next=${encodeURIComponent(destination)}`,
+    );
+  }
+
+  return res.status(401).json({
+    message: "Authentication required",
+    redirect: "/login.html",
+  });
+});
 
 // Disable caching for all static files to prevent stale files being served
 app.use(
@@ -64,7 +113,6 @@ app.use(
     },
   }),
 );
-app.use(express.json());
 
 // Redirect root requests to the transactions page
 app.get(["/", "/index.html"], (req, res) => {
@@ -73,22 +121,11 @@ app.get(["/", "/index.html"], (req, res) => {
 
 // IP-to-User Mapping removed: authentication will rely on session or explicit dev default.
 
-// Default user for development mode (localhost testing)
-const devDefaultUser = "TKENT";
-
-// Middleware: Set user from session or IP mapping
+// Keep the existing user identity field populated for routes that use req.user.
 app.use((req, res, next) => {
-  // Get user from existing session
-  if (req.session && req.session.user_id) {
-    req.user = req.session.user_id;
+  if (req.session && req.session.user) {
+    req.user = req.session.user;
   }
-
-  // Dev mode: Use default user if no user identified
-  if (!req.user && isDevelopment) {
-    req.user = devDefaultUser;
-    if (req.session) req.session.user_id = req.user;
-  }
-
   next();
 });
 

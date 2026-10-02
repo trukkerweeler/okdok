@@ -75,8 +75,8 @@ const paymentRepository = {
 
   getTenantMonthlyReport: async (
     tenant_id,
-    start_date,
-    due_end_date,
+    period_start_date,
+    period_end_date,
     payment_end_date,
   ) => {
     const sql = `
@@ -84,7 +84,7 @@ const paymentRepository = {
         COALESCE(p.amount_paid, 0) as amount_paid,
         GREATEST(i.amount - COALESCE(p.amount_paid, 0), 0) as balance_due,
         p.payment_method, p.reference_number, i.invoice_number,
-        i.description as invoice_type, i.due_date,
+        i.description as invoice_type, i.due_date, i.rent_period,
         COALESCE(t_direct.name, t_lease.name) as tenant_name,
         pr.address as property_address
       FROM invoices i
@@ -104,16 +104,18 @@ const paymentRepository = {
       LEFT JOIN tenants t_lease ON lt.tenant_id = t_lease.id
       LEFT JOIN properties pr ON i.property_id = pr.id
       WHERE (i.tenant_id = ? OR lt.tenant_id IS NOT NULL)
-        AND i.due_date BETWEEN ? AND ?
+        AND COALESCE(i.rent_period, DATE_FORMAT(i.invoice_date, '%Y-%m-01'))
+          BETWEEN ? AND ?
         AND i.status <> 'cancelled'
-      ORDER BY i.due_date ASC, i.id ASC
+      ORDER BY COALESCE(i.rent_period, DATE_FORMAT(i.invoice_date, '%Y-%m-01')) ASC,
+        i.due_date ASC, i.id ASC
     `;
     return db.query(sql, [
       payment_end_date,
       tenant_id,
       tenant_id,
-      start_date,
-      due_end_date,
+      period_start_date,
+      period_end_date,
     ]);
   },
 
@@ -151,47 +153,6 @@ const paymentRepository = {
       ORDER BY p.payment_date DESC
     `;
     return db.query(sql, [owner_id]);
-  },
-
-  /**
-   * Get a tenant's payments for a report period.
-   *
-   * Filters by the invoice's rent_period (the month the charge covers),
-   * not payment_date, so a late payment (e.g. July rent paid in August)
-   * is correctly excluded from the August report. Invoices without an
-   * explicit rent_period fall back to their invoice_date's month.
-   * end_date still bounds payment_date so future/unposted payments
-   * and the "include through today" toggle work as expected.
-   */
-  getTenantMonthlyReport: async (tenant_id, rent_period, end_date) => {
-    const sql = `
-      SELECT
-        p.id,
-        p.payment_date,
-        p.amount_paid,
-        p.payment_method,
-        p.reference_number,
-        p.notes,
-        p.transaction_type,
-        i.invoice_number,
-        i.description as invoice_type,
-        COALESCE(i.rent_period, DATE_FORMAT(i.invoice_date, '%Y-%m-01')) as rent_period,
-        COALESCE(t_direct.name, t_lease.name) as tenant_name,
-        pr.address as property_address
-      FROM invoice_payments p
-      LEFT JOIN invoices i ON p.invoice_id = i.id
-      LEFT JOIN leases l ON i.lease_id = l.id
-      LEFT JOIN lease_tenants lt ON l.id = lt.lease_id AND lt.is_primary = TRUE
-      LEFT JOIN tenants t_direct ON i.tenant_id = t_direct.id
-      LEFT JOIN tenants t_lease ON lt.tenant_id = t_lease.id
-      LEFT JOIN properties pr ON i.property_id = pr.id
-      WHERE (i.tenant_id = ? OR lt.tenant_id = ?)
-        AND COALESCE(i.rent_period, DATE_FORMAT(i.invoice_date, '%Y-%m-01')) = ?
-        AND p.payment_date <= ?
-        AND (p.transaction_type = 'tenant_to_manager' OR p.transaction_type IS NULL)
-      ORDER BY p.payment_date ASC, p.id ASC
-    `;
-    return db.query(sql, [tenant_id, tenant_id, rent_period, end_date]);
   },
 
   /**
