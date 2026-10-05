@@ -541,8 +541,8 @@ router.put("/:id", (req, res) => {
               WHERE INPUT_ID = ?`;
           const updateValues = [
             mydata.RESPONSE_DATE,
-            mydata.RESPONSE_BY,
-            mydata.MODIFIED_BY,
+            req.user,
+            req.user,
             mydata.MODIFIED_DATE,
             req.params.id,
           ];

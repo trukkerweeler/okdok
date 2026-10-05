@@ -2,7 +2,6 @@ import {
   loadHeaderFooter,
   createNotesSection,
   getSessionUser,
-  getUserByIP,
   getDateTime,
   myport,
   createElement,
@@ -19,14 +18,13 @@ import {
 } from "./escalation-utils.mjs";
 import userEmails from "./users.mjs";
 
-// IP address to username mapping
-const ipToUserMap = {
-  "192.168.1.69": "TKENT",
-  // Add more IP mappings here as needed
-};
-
 await loadHeaderFooter();
-const user = await getUserByIP(ipToUserMap);
+const user = await getSessionUser();
+if (!user) {
+  const currentPage = `${window.location.pathname}${window.location.search}`;
+  window.location.replace(`/login.html?next=${encodeURIComponent(currentPage)}`);
+  throw new Error("Unable to determine the authenticated user for this input.");
+}
 const iid = getUrlParam("id");
 
 const apiUrl = await getApiUrl();
@@ -490,11 +488,15 @@ fetch(url, { method: "GET" })
           };
 
           try {
-            await fetch(`${apiUrls.input}${iid}`, {
+            const response = await fetch(`${apiUrls.input}${iid}`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
+              credentials: "include",
               body: JSON.stringify({ data }),
             });
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}`);
+            }
             hideForm("responseDialog");
             await updateAfterSave();
           } catch (err) {

@@ -112,6 +112,7 @@
                 <option value="Credit Card">Credit Card</option>
                 <option value="Wire Transfer">Wire Transfer</option>
                 <option value="Online Payment">Online Payment</option>
+                <option value="CashApp">CashApp</option>
                 <option value="Other">Other</option>
               </select>
             </div>
@@ -206,7 +207,10 @@
         </form>
       </dialog>
 
-      <section class="row g-3 align-items-end mb-4" aria-label="Payment filters">
+      <section
+        class="row g-3 align-items-end mb-4"
+        aria-label="Payment filters"
+      >
         <div class="col-md-2">
           <label for="paymentYearFilter" class="form-label">Payment year</label>
           <select id="paymentYearFilter" class="form-control"></select>
@@ -239,15 +243,26 @@
             <option value="Credit Card">Credit Card</option>
             <option value="Wire Transfer">Wire Transfer</option>
             <option value="Online Payment">Online Payment</option>
+            <option value="CashApp">CashApp</option>
             <option value="Other">Other</option>
           </select>
         </div>
         <div class="col-md-4">
           <label for="paymentSearch" class="form-label">Search payments</label>
-          <input id="paymentSearch" type="search" class="form-control" placeholder="Invoice, tenant, property, owner, or reference" />
+          <input
+            id="paymentSearch"
+            type="search"
+            class="form-control"
+            placeholder="Invoice, tenant, property, owner, or reference"
+          />
         </div>
         <div class="col-md-2">
-          <button id="exportPaymentsBtn" type="button" class="btn btn-secondary w-100" title="Export filtered payments as CSV">
+          <button
+            id="exportPaymentsBtn"
+            type="button"
+            class="btn btn-secondary w-100"
+            title="Export filtered payments as CSV"
+          >
             Export CSV
           </button>
         </div>

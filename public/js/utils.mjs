@@ -275,12 +275,12 @@ export async function getUserValue() {
 // get authenticated user from server session
 export async function getSessionUser() {
   try {
-    const response = await fetch("/user/me", {
+    const response = await fetch("/auth/me", {
       credentials: "include", // Include cookies for session
     });
     if (response.ok) {
       const data = await response.json();
-      return data.username;
+      return data.user;
     } else {
       console.error("Failed to get session user:", response.status);
       return null;
@@ -288,31 +288,6 @@ export async function getSessionUser() {
   } catch (error) {
     console.error("Error fetching session user:", error);
     return null;
-  }
-}
-
-// Get user based on client IP address with fallback to "TEST"
-// ipToUserMap: object mapping IP addresses to usernames, e.g. { "192.168.1.69": "TKENT" }
-export async function getUserByIP(ipToUserMap) {
-  try {
-    // Fetch the client's IP address from backend
-    const response = await fetch("/api/client-ip", {
-      credentials: "include",
-    });
-
-    if (!response.ok) {
-      console.warn("Could not fetch client IP, using fallback");
-      return "TEST";
-    }
-
-    const data = await response.json();
-    const clientIP = data.ip;
-
-    // Look up user by IP, fallback to "TEST"
-    return ipToUserMap[clientIP] || "TEST";
-  } catch (error) {
-    console.error("Error determining user by IP:", error);
-    return "TEST";
   }
 }
 
