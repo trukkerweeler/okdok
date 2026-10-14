@@ -250,14 +250,19 @@ const invoiceRepository = {
     const currentYear = new Date().getFullYear();
     const twoDigitYear = String(currentYear).slice(-2);
 
-    // Count invoices for current year only
-    const sql =
-      "SELECT COUNT(*) as count FROM invoices WHERE YEAR(invoice_date) = ?";
-    const results = await db.query(sql, [currentYear]);
-    const count = results[0]?.count || 0;
-
-    // Start numbering at 101, increment from there
-    const sequenceNumber = 101 + count;
+    // Use the highest existing sequence so deleting an earlier invoice does
+    // not cause a later invoice number to be generated again.
+    const sql = `
+      SELECT MAX(CAST(SUBSTRING_INDEX(invoice_number, '-', -1) AS UNSIGNED)) as max_sequence
+      FROM invoices
+      WHERE invoice_number LIKE ? AND YEAR(invoice_date) = ?
+    `;
+    const results = await db.query(sql, [`${twoDigitYear}-%`, currentYear]);
+    const maxSequence = Number(results[0]?.max_sequence);
+    const sequenceNumber =
+      Number.isFinite(maxSequence) && maxSequence >= 101
+        ? maxSequence + 1
+        : 101;
     return `${twoDigitYear}-${String(sequenceNumber).padStart(3, "0")}`;
   },
 };

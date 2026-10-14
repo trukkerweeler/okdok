@@ -137,6 +137,10 @@ function setupEventListeners() {
       document.getElementById("defaultNoteAlert").classList.add("d-none");
     });
   }
+
+  ["invoiceTenantFilter", "invoiceLeaseFilter", "invoiceStatusFilter"].forEach(
+    (id) => document.getElementById(id)?.addEventListener("change", displayInvoices),
+  );
 }
 
 async function loadReferenceData() {
@@ -186,8 +190,37 @@ async function loadReferenceData() {
           .push({ id: row.id, name: row.name, is_primary: row.is_primary });
       });
     }
+    populateInvoiceFilters();
   } catch (error) {
     console.error("Error loading reference data:", error);
+  }
+}
+
+function populateInvoiceFilters() {
+  const tenantFilter = document.getElementById("invoiceTenantFilter");
+  if (tenantFilter) {
+    tenantFilter.innerHTML = '<option value="">All tenants</option>';
+    tenants
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .forEach((tenant) => {
+        const option = document.createElement("option");
+        option.value = tenant.id;
+        option.textContent = tenant.name;
+        tenantFilter.appendChild(option);
+      });
+  }
+
+  const leaseFilter = document.getElementById("invoiceLeaseFilter");
+  if (leaseFilter) {
+    leaseFilter.innerHTML = '<option value="">All leases</option>';
+    leases.forEach((lease) => {
+      const property = properties.find((item) => item.id === lease.property_id);
+      const option = document.createElement("option");
+      option.value = lease.id;
+      option.textContent = `${lease.lease_number} - ${property?.address || "Unknown"}`;
+      leaseFilter.appendChild(option);
+    });
   }
 }
 
@@ -447,13 +480,16 @@ async function getNextInvoiceNumber() {
   const currentYear = new Date().getFullYear();
   const twoDigitYear = String(currentYear).slice(-2);
 
-  // Count invoices for current year only
-  const currentYearInvoices = invoices.filter(
-    (i) => new Date(i.created_at).getFullYear() === currentYear,
-  ).length;
-
-  // Start numbering at 101, increment from there
-  const sequenceNumber = 101 + currentYearInvoices;
+  // Use the highest existing sequence so deleting an earlier invoice does
+  // not cause a later invoice number to be generated again.
+  const maxSequence = invoices.reduce((max, invoice) => {
+    if (!invoice.invoice_number?.startsWith(`${twoDigitYear}-`)) {
+      return max;
+    }
+    const sequence = Number(invoice.invoice_number.split("-").pop());
+    return Number.isFinite(sequence) ? Math.max(max, sequence) : max;
+  }, 100);
+  const sequenceNumber = maxSequence + 1;
   return `${twoDigitYear}-${String(sequenceNumber).padStart(3, "0")}`;
 }
 
@@ -588,9 +624,26 @@ function displayInvoices() {
   const tbody = document.getElementById("invoicesTableBody");
   if (!tbody) return;
 
-  if (invoices.length === 0) {
+  const tenantFilter = document.getElementById("invoiceTenantFilter")?.value || "";
+  const leaseFilter = document.getElementById("invoiceLeaseFilter")?.value || "";
+  const statusFilter = document.getElementById("invoiceStatusFilter")?.value || "";
+  const filteredInvoices = invoices.filter((invoice) => {
+    if (leaseFilter && String(invoice.lease_id) !== leaseFilter) return false;
+    if (statusFilter && invoice.status !== statusFilter) return false;
+    if (tenantFilter) {
+      const associatedTenants = leaseTenantMap.get(Number(invoice.lease_id)) || [];
+      if (!associatedTenants.some((tenant) => String(tenant.id) === tenantFilter)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  updateInvoiceSummary(filteredInvoices);
+
+  if (filteredInvoices.length === 0) {
     tbody.innerHTML =
-      '<tr><td colspan="10" class="text-center text-muted py-4">No invoices found. Click + to create one.</td></tr>';
+      `<tr><td colspan="10" class="text-center text-muted py-4">${invoices.length === 0 ? "No invoices found. Click + to create one." : "No invoices match the selected filters."}</td></tr>`;
     return;
   }
 
@@ -605,7 +658,7 @@ function displayInvoices() {
   ];
   let colorIndex = 0;
 
-  invoices.forEach((invoice) => {
+  filteredInvoices.forEach((invoice) => {
     const address = invoice.property_address || "—";
     if (!addressColorMap[address]) {
       addressColorMap[address] = colors[colorIndex % colors.length];
@@ -613,7 +666,7 @@ function displayInvoices() {
     }
   });
 
-  tbody.innerHTML = invoices
+  tbody.innerHTML = filteredInvoices
     .map((invoice) => {
       const statusBadgeClass = getStatusBadgeClass(invoice.status);
       const invoiceDate = formatDate(invoice.invoice_date);
@@ -677,6 +730,27 @@ function displayInvoices() {
       deleteInvoice(invoiceId);
     });
   });
+}
+
+function updateInvoiceSummary(filteredInvoices) {
+  const total = filteredInvoices.reduce(
+    (sum, invoice) => sum + (parseFloat(invoice.amount) || 0),
+    0,
+  );
+  const paid = filteredInvoices.reduce(
+    (sum, invoice) => sum + (parseFloat(invoice.total_paid) || 0),
+    0,
+  );
+  const outstanding = Math.max(0, total - paid);
+  const count = document.getElementById("invoiceSummaryCount");
+  const totalElement = document.getElementById("invoiceSummaryTotal");
+  const paidElement = document.getElementById("invoiceSummaryPaid");
+  const outstandingElement = document.getElementById("invoiceSummaryOutstanding");
+
+  if (count) count.textContent = `${filteredInvoices.length} invoice${filteredInvoices.length === 1 ? "" : "s"}`;
+  if (totalElement) totalElement.textContent = formatCurrency(total);
+  if (paidElement) paidElement.textContent = formatCurrency(paid);
+  if (outstandingElement) outstandingElement.textContent = formatCurrency(outstanding);
 }
 
 function getStatusBadgeClass(status) {

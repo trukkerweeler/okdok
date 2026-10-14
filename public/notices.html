@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Create and save property management notices." />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Abel&family=Tapestry&display=swap" />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="icon" href="images/okdok.png" />
+    <title>Notices - Accounting</title>
+    <style>
+      .notice-preview { background: #fff; border: 1px solid #dee2e6; padding: 2.5rem; }
+      .notice-preview h2 { text-align: center; font-size: 1.25rem; }
+      .notice-preview .notice-law { text-align: center; margin-bottom: 2rem; }
+      .notice-preview .notice-line { white-space: pre-wrap; }
+      @media print {
+        @page { margin: 0.55in; }
+        body > *:not(main), .notice-form, .saved-notices, .print-hide { display: none !important; }
+        #noticeMessage { display: none !important; }
+        main { max-width: none !important; margin: 0 !important; }
+        .notice-preview { border: 0; padding: 0; margin: 0 !important; font-size: 12pt; line-height: 1.35; }
+        .notice-preview h2 { margin: 0 0 0.45rem; }
+        .notice-preview .notice-law { margin: 0 0 1rem; }
+        .notice-preview p, .notice-preview ol, .notice-preview ul { margin-top: 0; margin-bottom: 0.85rem; }
+        .notice-preview .notice-amount-heading { margin-bottom: 0; }
+        .notice-preview .notice-amount-intro { margin-top: 0; }
+      }
+    </style>
+  </head>
+  <body class="notices-page">
+    <header id="header"></header>
+
+    <main class="container my-4">
+      <section class="notice-form mb-4">
+        <h2 class="h4">3-Day Notice to Pay Rent or Vacate</h2>
+        <p class="text-muted">Utah Code § 78B-6-802</p>
+        <form id="noticeForm" class="row g-3">
+          <input id="noticeId" name="notice_id" type="hidden" />
+          <div class="col-md-4">
+            <label for="noticeDate" class="form-label required">Notice date</label>
+            <input id="noticeDate" name="notice_date" type="date" class="form-control" required />
+          </div>
+          <div class="col-md-4">
+            <label for="noticeTenant" class="form-label">Tenant</label>
+            <select id="noticeTenant" name="tenant_id" class="form-select">
+              <option value="">Select a tenant (optional)</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label for="noticeProperty" class="form-label">Property address</label>
+            <select id="noticeProperty" name="property_id" class="form-select">
+              <option value="">Select an address (optional)</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label for="tenantMailingAddress" class="form-label">Tenant mailing address</label>
+            <input id="tenantMailingAddress" name="tenant_mailing_address" class="form-control" placeholder="Optional" />
+          </div>
+          <div class="col-md-4">
+            <label for="amountOwed" class="form-label required">Amount owed</label>
+            <input id="amountOwed" name="amount_owed" type="number" min="0.01" step="0.01" class="form-control" required />
+          </div>
+          <div class="col-md-4">
+            <label for="rentPeriodStart" class="form-label">Rent period start</label>
+            <input id="rentPeriodStart" name="rent_period_start" type="date" class="form-control" />
+          </div>
+          <div class="col-md-4">
+            <label for="rentPeriodEnd" class="form-label">Rent period end</label>
+            <input id="rentPeriodEnd" name="rent_period_end" type="date" class="form-control" />
+          </div>
+          <div class="col-md-4">
+            <label for="landlordName" class="form-label required">Landlord / agent name</label>
+            <input id="landlordName" name="landlord_name" class="form-control" value="Tim Kent (Authorized Agent for Landlord)" required />
+          </div>
+          <div class="col-md-4">
+            <label for="landlordPhone" class="form-label required">Phone</label>
+            <input id="landlordPhone" name="landlord_phone" class="form-control" value="801-367-6587" required />
+          </div>
+          <div class="col-md-8">
+            <label for="landlordAddress" class="form-label required">Mailing address</label>
+            <input id="landlordAddress" name="landlord_address" class="form-control" value="149 S. Canyon View Drive, Elk Ridge, UT 84651" required />
+          </div>
+          <div class="col-12 d-flex gap-2 justify-content-end">
+            <button type="button" id="printNoticeBtn" class="btn btn-secondary print-hide">Print notice</button>
+            <button type="submit" class="btn btn-primary">Save notice</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="notice-preview mb-4" aria-labelledby="previewHeading">
+        <h2 id="previewHeading">3-DAY NOTICE TO PAY RENT OR VACATE</h2>
+        <p class="notice-law"><strong>(Utah Code § 78B-6-802)</strong></p>
+        <div id="noticePreview"></div>
+      </section>
+
+      <section class="saved-notices">
+        <h2 class="h4">Saved notices</h2>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead class="table-light">
+              <tr><th>Date</th><th>Tenant</th><th>Property</th><th>Amount</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="savedNoticesBody"><tr><td colspan="6">Loading notices...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <footer id="footer"></footer>
+    <script type="module" src="/js/notices.mjs"></script>
+  </body>
+</html>
