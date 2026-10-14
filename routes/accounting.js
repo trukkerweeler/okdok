@@ -1653,7 +1653,14 @@ router.delete("/ledger/:id", async (req, res) => {
       return res.status(404).json({ error: "Ledger entry not found" });
     }
 
-    const deleted = await ledgerRepository.delete(id);
+    // Distributions point to themselves; deleting one must release its reimbursed expenses/fees
+    const isDistribution =
+      entry.distribution_id != null &&
+      parseInt(entry.distribution_id) === parseInt(entry.id);
+
+    const deleted = isDistribution
+      ? await ledgerRepository.deleteDistribution(id)
+      : await ledgerRepository.delete(id);
     if (deleted) {
       res.json({ message: "Transaction deleted", id });
     } else {

@@ -164,6 +164,69 @@ const ledgerRepository = {
   },
 
   /**
+   * Delete a distribution and reverse its effects atomically:
+   * linked expenses/fees return to 'unreimbursed', and management fees that
+   * were auto-created with the distribution are removed.
+   * @param {number} id - Distribution ledger entry ID
+   * @returns {Promise<boolean>} True if the distribution was deleted
+   */
+  deleteDistribution: async (id) => {
+    return db.transaction(async (connection) => {
+      const [dist] = await db.queryInTransaction(
+        connection,
+        "SELECT created_at FROM ledger_entries WHERE id = ? FOR UPDATE",
+        [id],
+      );
+      if (!dist) return false;
+
+      // Fees created inline with the distribution (not pre-existing ones that were selected)
+      const inlineFees = await db.queryInTransaction(
+        connection,
+        `SELECT le.id
+         FROM distribution_fees df
+         JOIN ledger_entries le ON le.id = df.fee_id
+         WHERE df.distribution_id = ? AND le.created_at >= ?`,
+        [id, dist.created_at],
+      );
+      const inlineFeeIds = inlineFees.map((f) => f.id);
+
+      await db.queryInTransaction(
+        connection,
+        `UPDATE ledger_entries le
+         JOIN distribution_expenses de ON de.expense_id = le.id
+         SET le.reimbursement_status = 'unreimbursed'
+         WHERE de.distribution_id = ?`,
+        [id],
+      );
+
+      await db.queryInTransaction(
+        connection,
+        `UPDATE ledger_entries le
+         JOIN distribution_fees df ON df.fee_id = le.id
+         SET le.reimbursement_status = 'unreimbursed'
+         WHERE df.distribution_id = ?`,
+        [id],
+      );
+
+      const result = await db.queryInTransaction(
+        connection,
+        "DELETE FROM ledger_entries WHERE id = ?",
+        [id],
+      );
+
+      if (inlineFeeIds.length > 0) {
+        await db.queryInTransaction(
+          connection,
+          "DELETE FROM ledger_entries WHERE id IN (?)",
+          [inlineFeeIds],
+        );
+      }
+
+      return result.affectedRows > 0;
+    });
+  },
+
+  /**
    * Get unreimbursed owner expenses for an owner
    * @param {number} owner_id - Owner ID
    * @returns {Promise<array>} Array of unreimbursed expense ledger entries
