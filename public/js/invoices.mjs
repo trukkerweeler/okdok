@@ -632,7 +632,12 @@ function displayInvoices() {
     if (statusFilter && invoice.status !== statusFilter) return false;
     if (tenantFilter) {
       const associatedTenants = leaseTenantMap.get(Number(invoice.lease_id)) || [];
-      if (!associatedTenants.some((tenant) => String(tenant.id) === tenantFilter)) {
+      const matchesLeaseTenant = associatedTenants.some(
+        (tenant) => String(tenant.id) === tenantFilter,
+      );
+      const matchesDirectTenant =
+        invoice.tenant_id != null && String(invoice.tenant_id) === tenantFilter;
+      if (!matchesLeaseTenant && !matchesDirectTenant) {
         return false;
       }
     }
@@ -733,15 +738,28 @@ function displayInvoices() {
 }
 
 function updateInvoiceSummary(filteredInvoices) {
-  const total = filteredInvoices.reduce(
+  const activeInvoices = filteredInvoices.filter(
+    (invoice) => invoice.status !== "cancelled",
+  );
+  const total = activeInvoices.reduce(
     (sum, invoice) => sum + (parseFloat(invoice.amount) || 0),
     0,
   );
-  const paid = filteredInvoices.reduce(
+  const paid = activeInvoices.reduce(
     (sum, invoice) => sum + (parseFloat(invoice.total_paid) || 0),
     0,
   );
-  const outstanding = Math.max(0, total - paid);
+  // Per-invoice so an overpaid invoice can't offset another invoice's balance
+  const outstanding = activeInvoices.reduce(
+    (sum, invoice) =>
+      sum +
+      Math.max(
+        0,
+        (parseFloat(invoice.amount) || 0) -
+          (parseFloat(invoice.total_paid) || 0),
+      ),
+    0,
+  );
   const count = document.getElementById("invoiceSummaryCount");
   const totalElement = document.getElementById("invoiceSummaryTotal");
   const paidElement = document.getElementById("invoiceSummaryPaid");

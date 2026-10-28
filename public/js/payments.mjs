@@ -497,18 +497,21 @@ function updateSummary(paymentsForSummary = getFilteredPayments()) {
     invoiceTotals[p.invoice_id].totalPaid += parseFloat(p.amount_paid);
   });
 
-  // Add unpaid invoices
+  // Add invoices with no payments in the filtered payment list. An invoice can
+  // still be outstanding even when it has no payment record yet.
   invoices
-    .filter((inv) =>
-      matchesDateFilter(inv.due_date || inv.invoice_date || inv.created_at),
+    .filter(
+      (inv) =>
+        inv.status !== "cancelled" &&
+        matchesInvoiceDateFilter(inv),
     )
     .forEach((inv) => {
-    if (!invoiceTotals[inv.id]) {
-      invoiceTotals[inv.id] = {
-        invoiceAmount: parseFloat(inv.amount),
-        totalPaid: 0,
-      };
-    }
+      if (!invoiceTotals[inv.id]) {
+        invoiceTotals[inv.id] = {
+          invoiceAmount: parseFloat(inv.amount),
+          totalPaid: 0,
+        };
+      }
     });
 
   let totalBalance = 0;
@@ -577,6 +580,14 @@ function matchesDateFilter(dateValue) {
     (!year || parts.year === Number(year)) &&
     (!month || parts.month === Number(month))
   );
+}
+
+function matchesInvoiceDateFilter(invoice) {
+  return [
+    invoice.invoice_date,
+    invoice.due_date,
+    invoice.created_at,
+  ].some((dateValue) => matchesDateFilter(dateValue));
 }
 
 function getFilteredPayments() {

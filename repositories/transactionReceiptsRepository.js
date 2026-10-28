@@ -10,10 +10,10 @@ const transactionReceiptsRepository = {
    */
   getByLedgerId: async (ledger_id) => {
     const sql = `
-      SELECT id, ledger_id, filename, mime_type, file_size, created_at
+      SELECT id, ledger_id, filename, label, mime_type, file_size, created_at
       FROM transaction_receipts
       WHERE ledger_id = ?
-      ORDER BY created_at DESC
+      ORDER BY created_at DESC, id DESC
     `;
     return db.query(sql, [ledger_id]);
   },
@@ -34,15 +34,23 @@ const transactionReceiptsRepository = {
   /**
    * Create a new receipt
    */
-  create: async ({ ledger_id, file_blob, filename, mime_type, file_size }) => {
+  create: async ({
+    ledger_id,
+    file_blob,
+    filename,
+    label = null,
+    mime_type,
+    file_size,
+  }) => {
     const sql = `
-      INSERT INTO transaction_receipts (ledger_id, file_blob, filename, mime_type, file_size)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO transaction_receipts (ledger_id, file_blob, filename, label, mime_type, file_size)
+      VALUES (?, ?, ?, ?, ?, ?)
     `;
     const result = await db.query(sql, [
       ledger_id,
       file_blob,
       filename,
+      label,
       mime_type,
       file_size,
     ]);
@@ -50,6 +58,7 @@ const transactionReceiptsRepository = {
       id: result.insertId,
       ledger_id,
       filename,
+      label,
       mime_type,
       file_size,
     };
