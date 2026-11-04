@@ -135,8 +135,12 @@ function render() {
   }).join("");
 }
 
-function sum(items) { return items.reduce((total, item) => total + Number.parseFloat(item.amount || 0), 0); }
-function formatMoney(amount) { return `$${amount.toFixed(2)}`; }
+function sum(items) { return items.reduce((total, item) => total + (Number.parseFloat(item.amount) || 0), 0); }
+function formatMoney(amount) {
+  const numericAmount = Number.parseFloat(amount);
+  if (!Number.isFinite(numericAmount)) return "$0.00";
+  return `$${numericAmount.toFixed(2)}`;
+}
 function formatDate(value) { return new Date(value).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" }); }
 function setTodayDate() { document.getElementById("date").value = new Date().toISOString().slice(0, 10); }
 function setText(id, value) { document.getElementById(id).textContent = value; }

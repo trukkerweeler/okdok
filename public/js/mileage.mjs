@@ -374,9 +374,32 @@ function displayMileage() {
           <td>${entry.property_address ? entry.property_address : "-"}</td>
           <td class="fw-bold">${milesValue.toFixed(1)} mi</td>
           <td class="small">${locations}</td>
-          <td>
-            <button class="btn btn-sm btn-outline-primary" onclick="editMileage(${entry.id})">Edit</button>
-            <button class="btn btn-sm btn-outline-danger" onclick="deleteMileage(${entry.id})">Delete</button>
+          <td class="text-nowrap">
+            <button
+              class="btn btn-sm btn-outline-primary"
+              type="button"
+              title="Edit mileage"
+              aria-label="Edit mileage"
+              onclick="editMileage(${entry.id})"
+            >
+              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11.5 2.5L13.5 4.5L5.75 12.25L2.5 13.5L3.75 10.25L11.5 2.5Z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M9.5 4.5L11.5 6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <button
+              class="btn btn-sm btn-outline-danger ms-1"
+              type="button"
+              title="Delete mileage"
+              aria-label="Delete mileage"
+              onclick="deleteMileage(${entry.id})"
+            >
+              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 4.5H13" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <path d="M5.5 4.5V3H10.5V4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M5 6.5L5.5 12.5H10.5L11 6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
           </td>
         </tr>
       `;

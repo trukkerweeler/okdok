@@ -159,13 +159,23 @@
               <label for="checkStubFile" class="form-label"
                 >Check Stub Scan (PDF or Image)</label
               >
-              <input
-                type="file"
-                id="checkStubFile"
-                name="check_stub"
-                accept="application/pdf,image/jpeg,image/png,image/gif,image/tiff"
-                class="form-control"
-              />
+              <div class="input-group">
+                <input
+                  type="file"
+                  id="checkStubFile"
+                  name="check_stub"
+                  accept="application/pdf,image/jpeg,image/png,image/gif,image/tiff"
+                  class="form-control"
+                />
+                <button
+                  type="button"
+                  class="btn btn-outline-danger clear-file-btn"
+                  data-target="checkStubFile"
+                  title="Remove selected file"
+                >
+                  ✕ Remove
+                </button>
+              </div>
               <small class="text-muted"
                 >Optional: Upload a scan of the check stub (PDF or image, max
                 10MB)</small
@@ -176,13 +186,23 @@
               <label for="depositReceiptFile" class="form-label"
                 >Deposit Receipt Scan (PDF or Image)</label
               >
-              <input
-                type="file"
-                id="depositReceiptFile"
-                name="deposit_receipt"
-                accept="application/pdf,image/jpeg,image/png,image/gif,image/tiff"
-                class="form-control"
-              />
+              <div class="input-group">
+                <input
+                  type="file"
+                  id="depositReceiptFile"
+                  name="deposit_receipt"
+                  accept="application/pdf,image/jpeg,image/png,image/gif,image/tiff"
+                  class="form-control"
+                />
+                <button
+                  type="button"
+                  class="btn btn-outline-danger clear-file-btn"
+                  data-target="depositReceiptFile"
+                  title="Remove selected file"
+                >
+                  ✕ Remove
+                </button>
+              </div>
               <small class="text-muted"
                 >Optional: Upload a scan of the bank deposit receipt (PDF or
                 image, max 10MB)</small

@@ -64,6 +64,14 @@ function setupEventListeners() {
     });
   }
 
+  // Remove a wrongly chosen attachment
+  document.querySelectorAll(".clear-file-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = document.getElementById(btn.dataset.target);
+      if (input) input.value = "";
+    });
+  });
+
   // Invoice dropdown change - update balance display
   const invoiceSelect = document.getElementById("paymentInvoice");
   if (invoiceSelect) {
