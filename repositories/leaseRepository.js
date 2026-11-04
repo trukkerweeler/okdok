@@ -138,6 +138,14 @@ const leaseRepository = {
    * Add tenant to lease
    */
   addTenant: async (lease_id, tenant_id, is_primary = false) => {
+    // A lease must have at most one primary tenant, otherwise joins on
+    // is_primary duplicate rows and inflate invoice/payment totals
+    if (is_primary) {
+      await db.query(
+        "UPDATE lease_tenants SET is_primary = FALSE WHERE lease_id = ? AND tenant_id <> ?",
+        [lease_id, tenant_id],
+      );
+    }
     const sql = `INSERT INTO lease_tenants (lease_id, tenant_id, is_primary)
                  VALUES (?, ?, ?)
                  ON DUPLICATE KEY UPDATE is_primary = ?`;

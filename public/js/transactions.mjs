@@ -1054,65 +1054,217 @@ async function attachTransactionReceipt(transactionId) {
   document.getElementById("transactionReceiptFileInput").click();
 }
 
+const RECEIPT_LABEL_SUGGESTIONS = ["Bank receipt", "Check stub", "Invoice", "Other"];
+
+function createReceiptOverlay(id) {
+  document.getElementById(id)?.remove();
+  const overlay = document.createElement("div");
+  overlay.id = id;
+  overlay.style.cssText =
+    "position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:10000;";
+  const box = document.createElement("div");
+  box.style.cssText =
+    "background:#fff;border-radius:8px;padding:20px;min-width:340px;max-width:90vw;max-height:80vh;overflow:auto;";
+  overlay.appendChild(box);
+  overlay.addEventListener("click", (ev) => {
+    if (ev.target === overlay) overlay.remove();
+  });
+  document.body.appendChild(overlay);
+  return { overlay, box };
+}
+
 async function uploadTransactionReceipt(e) {
-  try {
-    const file = e.target.files[0];
-    if (!file) return;
+  const input = e.target;
+  const file = input.files[0];
+  if (!file) return;
 
-    const formData = new FormData();
-    formData.append("file", file);
+  const { overlay, box } = createReceiptOverlay("receiptLabelModal");
+  const transactionId = currentTransactionIdForReceipt;
 
-    const response = await fetch(
-      `${apiUrl}/accounting/ledger/${currentTransactionIdForReceipt}/receipts`,
-      {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      },
-    );
+  const title = document.createElement("h3");
+  title.textContent = "Attach receipt";
+  title.style.marginTop = "0";
 
-    if (!response.ok) {
-      throw new Error("Failed to upload receipt");
+  const fileName = document.createElement("div");
+  fileName.textContent = file.name;
+  fileName.style.marginBottom = "12px";
+
+  const labelInput = document.createElement("input");
+  labelInput.type = "text";
+  labelInput.maxLength = 50;
+  labelInput.placeholder = "Label (e.g. Bank receipt, Check stub)";
+  labelInput.setAttribute("list", "receiptLabelOptions");
+  labelInput.style.cssText = "width:100%;box-sizing:border-box;";
+
+  const datalist = document.createElement("datalist");
+  datalist.id = "receiptLabelOptions";
+  RECEIPT_LABEL_SUGGESTIONS.forEach((s) => {
+    const opt = document.createElement("option");
+    opt.value = s;
+    datalist.appendChild(opt);
+  });
+
+  const buttons = document.createElement("div");
+  buttons.style.cssText =
+    "display:flex;gap:8px;justify-content:flex-end;margin-top:16px;";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "Cancel";
+  const upload = document.createElement("button");
+  upload.type = "button";
+  upload.textContent = "Upload";
+  buttons.append(cancel, upload);
+
+  box.append(title, fileName, labelInput, datalist, buttons);
+  labelInput.focus();
+
+  const dismiss = () => {
+    overlay.remove();
+    input.value = "";
+  };
+  cancel.addEventListener("click", dismiss);
+  overlay.addEventListener("click", (ev) => {
+    if (ev.target === overlay) input.value = "";
+  });
+  labelInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") upload.click();
+  });
+
+  upload.addEventListener("click", async () => {
+    upload.disabled = true;
+    try {
+      const formData = new FormData();
+      // Text fields must precede the file so multer sees them
+      formData.append("label", labelInput.value.trim());
+      formData.append("file", file);
+
+      const response = await fetch(
+        `${apiUrl}/accounting/ledger/${transactionId}/receipts`,
+        { method: "POST", body: formData, credentials: "include" },
+      );
+      if (!response.ok) throw new Error("Failed to upload receipt");
+
+      showMessage("✓ Receipt uploaded successfully", "success");
+      dismiss();
+      await loadTransactions();
+    } catch (error) {
+      console.error("Error uploading receipt:", error);
+      showMessage("Error uploading receipt", "error");
+      upload.disabled = false;
     }
+  });
+}
 
-    showMessage("✓ Receipt uploaded successfully", "success");
-    await loadTransactions();
-    e.target.value = ""; // Reset file input
-  } catch (error) {
-    console.error("Error uploading receipt:", error);
-    showMessage("Error uploading receipt", "error");
+async function fetchTransactionReceipts(transactionId) {
+  const response = await fetch(
+    `${apiUrl}/accounting/ledger/${transactionId}/receipts`,
+    {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+    },
+  );
+  if (!response.ok) {
+    throw new Error("Failed to fetch receipts");
   }
+  return response.json();
 }
 
 async function downloadTransactionReceipt(transactionId) {
   try {
-    const response = await fetch(
-      `${apiUrl}/accounting/ledger/${transactionId}/receipts`,
-      {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch receipts");
-    }
-
-    const receipts = await response.json();
+    const receipts = await fetchTransactionReceipts(transactionId);
     if (receipts.length > 0) {
-      // Download the most recent receipt
-      const receipt = receipts[0];
-      const downloadUrl = `${apiUrl}/accounting/receipts/${receipt.id}`;
-      const link = document.createElement("a");
-      link.href = downloadUrl;
-      link.download = receipt.filename;
-      link.click();
+      showReceiptListModal(transactionId, receipts);
     }
   } catch (error) {
-    console.error("Error downloading receipt:", error);
-    showMessage("Error downloading receipt", "error");
+    console.error("Error loading receipts:", error);
+    showMessage("Error loading receipts", "error");
   }
+}
+
+function triggerReceiptDownload(receipt) {
+  const link = document.createElement("a");
+  link.href = `${apiUrl}/accounting/receipts/${receipt.id}`;
+  link.download = receipt.filename;
+  link.click();
+}
+
+async function deleteTransactionReceipt(transactionId, receipt) {
+  if (!confirm(`Delete "${receipt.label || receipt.filename}"?`)) return;
+  try {
+    const response = await fetch(
+      `${apiUrl}/accounting/receipts/${receipt.id}`,
+      { method: "DELETE", credentials: "include" },
+    );
+    if (!response.ok) throw new Error("Failed to delete receipt");
+
+    showMessage("✓ Receipt deleted", "success");
+    const remaining = await fetchTransactionReceipts(transactionId);
+    if (remaining.length > 0) {
+      showReceiptListModal(transactionId, remaining);
+    } else {
+      document.getElementById("receiptListModal")?.remove();
+    }
+    await loadTransactions();
+  } catch (error) {
+    console.error("Error deleting receipt:", error);
+    showMessage("Error deleting receipt", "error");
+  }
+}
+
+function showReceiptListModal(transactionId, receipts) {
+  const { overlay, box } = createReceiptOverlay("receiptListModal");
+
+  const title = document.createElement("h3");
+  title.textContent = `Receipts (${receipts.length})`;
+  title.style.marginTop = "0";
+  box.appendChild(title);
+
+  receipts.forEach((receipt) => {
+    const row = document.createElement("div");
+    row.style.cssText =
+      "display:flex;justify-content:space-between;align-items:center;gap:16px;padding:8px 0;border-bottom:1px solid #eee;";
+
+    const info = document.createElement("div");
+    const name = document.createElement("div");
+    name.style.fontWeight = "600";
+    name.textContent = receipt.label || receipt.filename;
+    info.appendChild(name);
+    if (receipt.label) {
+      const file = document.createElement("div");
+      file.textContent = receipt.filename;
+      info.appendChild(file);
+    }
+    const meta = document.createElement("small");
+    meta.style.color = "#666";
+    const sizeKb = Math.max(1, Math.round((receipt.file_size || 0) / 1024));
+    meta.textContent = `${new Date(receipt.created_at).toLocaleString()} · ${sizeKb} KB`;
+    info.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.style.cssText = "display:flex;gap:6px;flex-shrink:0;";
+    const download = document.createElement("button");
+    download.type = "button";
+    download.textContent = "Download";
+    download.addEventListener("click", () => triggerReceiptDownload(receipt));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", () =>
+      deleteTransactionReceipt(transactionId, receipt),
+    );
+    actions.append(download, remove);
+
+    row.append(info, actions);
+    box.appendChild(row);
+  });
+
+  const close = document.createElement("button");
+  close.type = "button";
+  close.textContent = "Close";
+  close.style.marginTop = "12px";
+  close.addEventListener("click", () => overlay.remove());
+  box.appendChild(close);
 }
 
 function updateStats() {

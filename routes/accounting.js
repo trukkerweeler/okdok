@@ -3091,11 +3091,17 @@ router.post(
         return res.status(400).json({ error: "No file provided" });
       }
 
+      const label =
+        typeof req.body.label === "string"
+          ? req.body.label.trim().slice(0, 50) || null
+          : null;
+
       // Create receipt record
       const receipt = await transactionReceiptsRepository.create({
         ledger_id,
         file_blob: req.file.buffer,
         filename: req.file.originalname,
+        label,
         mime_type: req.file.mimetype,
         file_size: req.file.size,
       });
