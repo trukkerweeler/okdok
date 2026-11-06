@@ -6,7 +6,6 @@ const apiUrl = await getApiUrl();
 const allOwnersUrl = `${apiUrl}/accounting/owners`;
 const allPropertiesUrl = `${apiUrl}/accounting/properties`;
 const vendorsUrl = `${apiUrl}/accounting/vendors`;
-const expensesUrl = `${apiUrl}/accounting/expenses/owner`;
 const feesUrl = `${apiUrl}/accounting/fees/management`;
 const distributionsUrl = `${apiUrl}/accounting/distributions/owner`;
 
@@ -15,7 +14,7 @@ let owners = [];
 let properties = [];
 let vendors = [];
 let transactions = [];
-let currentType = "expense";
+let currentType = "fee";
 let lastTransaction = null;
 let filterProperty = null;
 let isSubmitting = false;
@@ -112,12 +111,10 @@ function setupEventListeners() {
 
 function setupKeyboardShortcuts() {
   document.addEventListener("keydown", (e) => {
-    // Ctrl/Cmd + 1,2,3 for transaction types
+    // Ctrl/Cmd + 1,2 for transaction types
     if ((e.ctrlKey || e.metaKey) && e.key === "1") {
-      switchType("expense");
-    } else if ((e.ctrlKey || e.metaKey) && e.key === "2") {
       switchType("fee");
-    } else if ((e.ctrlKey || e.metaKey) && e.key === "3") {
+    } else if ((e.ctrlKey || e.metaKey) && e.key === "2") {
       switchType("distribution");
     }
     // Enter in amount field to submit
@@ -508,9 +505,6 @@ async function submitTransaction(e) {
   const memo = document.getElementById("entryMemo").value;
   // Keep date as string from input (YYYY-MM-DD format) - backend will handle it as local date
   const date = document.getElementById("entryDate").value;
-  const vendor_id = document.getElementById("entryVendor").value
-    ? parseInt(document.getElementById("entryVendor").value)
-    : null;
   if (!amount) {
     showMessage("Amount is required", "error");
     return;
@@ -518,12 +512,6 @@ async function submitTransaction(e) {
 
   if (!owner_id || !property_id) {
     showMessage("Property and Amount are required", "error");
-    return;
-  }
-
-  // For expenses, require vendor
-  if (currentType === "expense" && !vendor_id) {
-    showMessage("Vendor is required for expenses", "error");
     return;
   }
 
@@ -545,16 +533,8 @@ async function submitTransaction(e) {
   try {
     const payload = { amount, owner_id, property_id, memo, date };
 
-    // Add vendor_id for expenses only
-    if (currentType === "expense") {
-      payload.vendor_id = vendor_id;
-    }
-
     let url;
     switch (currentType) {
-      case "expense":
-        url = expensesUrl;
-        break;
       case "fee":
         url = feesUrl;
         break;

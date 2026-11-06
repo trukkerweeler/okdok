@@ -76,6 +76,13 @@
         color: white;
       }
 
+      .expense-entry-links {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+        font-size: 12px;
+      }
+
       .form-group-compact {
         margin-bottom: 12px;
       }
@@ -485,13 +492,15 @@
 
         <!-- Transaction Type Tabs -->
         <div class="transaction-type-tabs">
-          <button class="type-btn active" data-type="expense">
-            💸 Expense
-          </button>
-          <button class="type-btn" data-type="fee">⚙️ Fee</button>
+          <button class="type-btn active" data-type="fee">⚙️ Fee</button>
           <button class="type-btn" data-type="distribution">
             💰 Distribution
           </button>
+        </div>
+        <div class="expense-entry-links">
+          <span>For expenses:</span>
+          <a href="/pm-expenses.html">Expenses</a>
+          <a href="/landlord-expenses.html">Landlord Expenses</a>
         </div>
 
         <!-- Single Entry Form -->
