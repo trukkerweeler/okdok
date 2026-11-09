@@ -541,6 +541,7 @@ async function saveInvoice(event) {
       rent_period: formData.get("rent_period")
         ? `${formData.get("rent_period")}-01`
         : null,
+      description: formData.get("invoice_type") || null,
       status: formData.get("status"),
       notes: formData.get("notes") || null,
       line_items,
@@ -648,7 +649,7 @@ function displayInvoices() {
 
   if (filteredInvoices.length === 0) {
     tbody.innerHTML =
-      `<tr><td colspan="10" class="text-center text-muted py-4">${invoices.length === 0 ? "No invoices found. Click + to create one." : "No invoices match the selected filters."}</td></tr>`;
+      `<tr><td colspan="11" class="text-center text-muted py-4">${invoices.length === 0 ? "No invoices found. Click + to create one." : "No invoices match the selected filters."}</td></tr>`;
     return;
   }
 
@@ -710,6 +711,7 @@ function displayInvoices() {
           <td class="text-end">${amountCell}</td>
           <td>${invoiceDate}</td>
           <td>${reportingWeek}</td>
+          <td>${formatRentPeriod(invoice.rent_period)}</td>
           <td>${dueDate}</td>
           <td><span class="badge ${statusBadgeClass}">${escapeHtml(invoice.status)}</span>${partialBadge}</td>
           <td>
@@ -791,6 +793,17 @@ function formatCurrency(amount) {
     style: "currency",
     currency: "USD",
   }).format(amount);
+}
+
+function formatRentPeriod(value) {
+  // Read year/month from the string so timezone conversion can't shift the month.
+  const match = String(value || "").match(/^(\d{4})-(\d{2})/);
+  if (!match) return "—";
+  const months = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  ];
+  return `${months[Number(match[2]) - 1]} ${match[1]}`;
 }
 
 function formatDate(dateString) {

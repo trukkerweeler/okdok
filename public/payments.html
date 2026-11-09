@@ -227,6 +227,81 @@
         </form>
       </dialog>
 
+      <!-- Attachments & Details Dialog -->
+      <dialog id="addScanDialog" class="dialog p-0">
+        <div class="dialog-header p-3 border-bottom">
+          <h2 class="h5 mb-0">Attachments &amp; Details</h2>
+        </div>
+        <form id="addScanForm" class="form p-3">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label">Attached documents</label>
+              <ul id="scanAttachmentList" class="list-unstyled mb-0"></ul>
+            </div>
+            <div class="col-12">
+              <label for="scanType" class="form-label">Document Type</label>
+              <select id="scanType" class="form-control">
+                <option value="check-stub">Check Stub</option>
+                <option value="deposit-receipt">Deposit Receipt</option>
+                <option value="screenshot">Screenshot</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label for="scanMethod" class="form-label">Method</label>
+              <select id="scanMethod" class="form-control">
+                <option value="">Select method...</option>
+                <option value="Check">Check</option>
+                <option value="ACH">ACH Transfer</option>
+                <option value="Cash">Cash</option>
+                <option value="Credit Card">Credit Card</option>
+                <option value="Wire Transfer">Wire Transfer</option>
+                <option value="Online Payment">Online Payment</option>
+                <option value="CashApp">CashApp</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label for="scanReference" class="form-label">Reference #</label>
+              <input
+                type="text"
+                id="scanReference"
+                placeholder="Check #, confirmation #, etc."
+                class="form-control"
+              />
+            </div>
+            <div class="col-12">
+              <label for="scanFile" class="form-label"
+                >File (PDF or Image)</label
+              >
+              <input
+                type="file"
+                id="scanFile"
+                accept="application/pdf,image/jpeg,image/png,image/gif,image/tiff"
+                class="form-control"
+              />
+              <small class="text-muted"
+                >Optional. Uploading replaces any existing document of the same
+                type (max 10MB).</small
+              >
+            </div>
+          </div>
+          <div class="dialog-actions d-flex gap-2 justify-content-end mt-3">
+            <button id="saveScanBtn" type="submit" class="btn btn-primary">
+              <span class="btn-icon">✓</span>
+              Save
+            </button>
+            <button
+              type="button"
+              id="closeAddScanBtn"
+              class="btn btn-secondary"
+            >
+              <span class="btn-icon">✕</span>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </dialog>
+
       <section
         class="row g-3 align-items-end mb-4"
         aria-label="Payment filters"
@@ -294,23 +369,19 @@
           <thead class="table-light">
             <tr>
               <th>Invoice #</th>
-              <th>Property</th>
-              <th>Tenant (Payer)</th>
+              <th>Tenant / Property</th>
               <th>Type</th>
               <th>Amount Due</th>
               <th>Amount Paid</th>
               <th>Balance Due</th>
               <th>Payment Date</th>
-              <th>Method</th>
-              <th>Reference</th>
-              <th>Recipient</th>
-              <th>Documents</th>
+              <th>Method / Reference</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="paymentsTableBody">
             <tr>
-              <td colspan="13" class="text-center text-muted py-4">
+              <td colspan="9" class="text-center text-muted py-4">
                 Loading payments...
               </td>
             </tr>

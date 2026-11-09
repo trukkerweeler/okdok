@@ -2316,6 +2316,28 @@ router.put("/payments/:id", async (req, res) => {
 });
 
 /**
+ * PUT /payments/:id/details - Update only the method and reference number of a payment
+ */
+router.put("/payments/:id/details", async (req, res) => {
+  try {
+    const payment = await paymentRepository.getById(req.params.id);
+    if (!payment) {
+      return res.status(404).json({ error: "Payment not found" });
+    }
+
+    const clean = (value) => (value || "").trim() || null;
+    const updated = await paymentRepository.updateDetails(req.params.id, {
+      payment_method: clean(req.body.payment_method),
+      reference_number: clean(req.body.reference_number),
+    });
+    res.json(updated);
+  } catch (error) {
+    console.error("Error updating payment details:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * DELETE /payments/:id - Delete payment
  */
 router.delete("/payments/:id", async (req, res) => {
@@ -2518,6 +2540,92 @@ router.delete("/payments/:id/deposit-receipt", async (req, res) => {
     res.json(payment);
   } catch (error) {
     console.error("Error deleting deposit receipt:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /payments/:id/screenshot - Upload or update screenshot for a payment
+ */
+router.put(
+  "/payments/:id/screenshot",
+  upload.single("screenshot"),
+  async (req, res) => {
+    try {
+      const paymentId = req.params.id;
+
+      const payment = await paymentRepository.getById(paymentId);
+      if (!payment) {
+        return res.status(404).json({ error: "Payment not found" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      await attachmentRepository.deleteByPaymentIdAndType(
+        paymentId,
+        "screenshot",
+      );
+
+      const attachment = await attachmentRepository.create({
+        payment_id: paymentId,
+        attachment_type: "screenshot",
+        file_blob: req.file.buffer,
+        filename: req.file.originalname,
+        mime_type: req.file.mimetype,
+        file_size: req.file.size,
+      });
+
+      res.json(attachment);
+    } catch (error) {
+      console.error("Error uploading screenshot:", error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
+/**
+ * GET /payments/:id/screenshot - Download screenshot for a payment
+ */
+router.get("/payments/:id/screenshot", async (req, res) => {
+  try {
+    const screenshot = await attachmentRepository.getScreenshotByPaymentId(
+      req.params.id,
+    );
+    if (!screenshot) {
+      return res.status(404).json({ error: "Screenshot not found" });
+    }
+
+    res.setHeader("Content-Type", screenshot.mime_type);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${screenshot.filename}"`,
+    );
+    res.send(screenshot.file_blob);
+  } catch (error) {
+    console.error("Error downloading screenshot:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /payments/:id/screenshot - Delete screenshot for a payment
+ */
+router.delete("/payments/:id/screenshot", async (req, res) => {
+  try {
+    const payment = await paymentRepository.getById(req.params.id);
+    if (!payment) {
+      return res.status(404).json({ error: "Payment not found" });
+    }
+
+    await attachmentRepository.deleteByPaymentIdAndType(
+      req.params.id,
+      "screenshot",
+    );
+    res.json(payment);
+  } catch (error) {
+    console.error("Error deleting screenshot:", error);
     res.status(500).json({ error: error.message });
   }
 });

@@ -26,7 +26,10 @@ const paymentRepository = {
         i.description as invoice_type,
         t.name as tenant_name,
         o.name as owner_name,
-        pr.address as property_address
+        pr.address as property_address,
+        COALESCE(a.has_check_stub, 0) = 1 as has_check_stub,
+        COALESCE(a.has_deposit_receipt, 0) = 1 as has_deposit_receipt,
+        COALESCE(a.has_screenshot, 0) = 1 as has_screenshot
       FROM invoice_payments p
       LEFT JOIN invoices i ON p.invoice_id = i.id
       LEFT JOIN leases l ON i.lease_id = l.id
@@ -34,6 +37,15 @@ const paymentRepository = {
       LEFT JOIN tenants t ON lt.tenant_id = t.id
       LEFT JOIN owners o ON i.owner_id = o.id
       LEFT JOIN properties pr ON i.property_id = pr.id
+      LEFT JOIN (
+        SELECT
+          payment_id,
+          MAX(attachment_type = 'check_stub') as has_check_stub,
+          MAX(attachment_type = 'deposit_receipt') as has_deposit_receipt,
+          MAX(attachment_type = 'screenshot') as has_screenshot
+        FROM payment_attachments
+        GROUP BY payment_id
+      ) a ON a.payment_id = p.id
       ORDER BY p.payment_date DESC, p.created_at DESC
     `;
     return db.query(sql);
@@ -250,6 +262,19 @@ const paymentRepository = {
       transaction_type || "tenant_to_manager",
       id,
     ]);
+    return paymentRepository.getById(id);
+  },
+
+  /**
+   * Update only the payment method and reference number of a payment
+   */
+  updateDetails: async (id, { payment_method, reference_number }) => {
+    const sql = `
+      UPDATE invoice_payments
+      SET payment_method = ?, reference_number = ?, updated_at = NOW()
+      WHERE id = ?
+    `;
+    await db.query(sql, [payment_method, reference_number, id]);
     return paymentRepository.getById(id);
   },
 

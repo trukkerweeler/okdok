@@ -12,9 +12,37 @@ const balanceUrl = `${apiUrl}/accounting/invoice-balance`;
 let user;
 let payments = [];
 let invoices = [];
-let paymentCheckStubs = {}; // Map of payment_id -> has_check_stub
-let paymentDepositReceipts = {}; // Map of payment_id -> has_deposit_receipt
+let paymentAttachments = {}; // Map of payment_id -> { slug: true } for attached documents
 let filteredPayments = [];
+let scanPaymentId = null;
+
+const ATTACHMENT_TYPES = [
+  { slug: "check-stub", label: "Check Stub" },
+  { slug: "deposit-receipt", label: "Deposit Receipt" },
+  { slug: "screenshot", label: "Screenshot" },
+];
+
+function hasAttachment(paymentId, slug) {
+  return Boolean(paymentAttachments[paymentId]?.[slug]);
+}
+
+function setAttachment(paymentId, slug, present) {
+  paymentAttachments[paymentId] = {
+    ...paymentAttachments[paymentId],
+    [slug]: present,
+  };
+}
+
+function attachmentCount(paymentId) {
+  return ATTACHMENT_TYPES.filter((type) => hasAttachment(paymentId, type.slug))
+    .length;
+}
+
+const PLUS_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 2v12M2 8h12"/></svg>';
+
+const PAPERCLIP_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
 
 // Initialize handler function
 async function initializePayments() {
@@ -63,6 +91,16 @@ function setupEventListeners() {
       }
     });
   }
+
+  // Add Scan dialog
+  const addScanDialog = document.getElementById("addScanDialog");
+  document
+    .getElementById("closeAddScanBtn")
+    ?.addEventListener("click", () => addScanDialog?.close());
+  document.getElementById("addScanForm")?.addEventListener("submit", saveScan);
+  addScanDialog?.addEventListener("click", (e) => {
+    if (e.target === addScanDialog) addScanDialog.close();
+  });
 
   // Remove a wrongly chosen attachment
   document.querySelectorAll(".clear-file-btn").forEach((btn) => {
@@ -328,32 +366,15 @@ async function loadPaymentsData() {
 
     payments = await response.json();
     populateYearFilter();
-    console.debug("Payments loaded:", payments);
-    // if (payments.length > 0) {
-    //   console.log("First payment keys:", Object.keys(payments[0]));
-    //   console.log("First payment tenant_name:", payments[0].tenant_name);
-    //   console.log("First payment full object:", payments[0]);
-    // }
 
-    // Check which payments have check stubs and deposit receipts
-    paymentCheckStubs = {};
-    paymentDepositReceipts = {};
+    // The API returns which attachment types each payment has.
+    paymentAttachments = {};
     for (const payment of payments) {
-      try {
-        const [stubResponse, receiptResponse] = await Promise.all([
-          fetch(`${paymentsUrl}/${payment.id}/check-stub`, {
-            credentials: "include",
-          }),
-          fetch(`${paymentsUrl}/${payment.id}/deposit-receipt`, {
-            credentials: "include",
-          }),
-        ]);
-        paymentCheckStubs[payment.id] = stubResponse.ok;
-        paymentDepositReceipts[payment.id] = receiptResponse.ok;
-      } catch (error) {
-        paymentCheckStubs[payment.id] = false;
-        paymentDepositReceipts[payment.id] = false;
-      }
+      paymentAttachments[payment.id] = {
+        "check-stub": Boolean(payment.has_check_stub),
+        "deposit-receipt": Boolean(payment.has_deposit_receipt),
+        screenshot: Boolean(payment.has_screenshot),
+      };
     }
 
     displayPayments();
@@ -372,7 +393,7 @@ function displayPayments() {
 
   if (filteredPayments.length === 0) {
     tbody.innerHTML =
-      '<tr><td colspan="13" class="text-center text-muted py-4">No payments match the selected filters.</td></tr>';
+      '<tr><td colspan="9" class="text-center text-muted py-4">No payments match the selected filters.</td></tr>';
     return;
   }
 
@@ -398,42 +419,34 @@ function displayPayments() {
       const balance = parseFloat(payment.invoice_amount) - invoiceData.total;
       const balanceCurrency = formatCurrency(Math.max(0, balance));
 
-      const checkStubButton = paymentCheckStubs[payment.id]
-        ? `<button class="btn btn-sm btn-info download-check-stub-btn" data-id="${payment.id}" title="Download Check Stub">📄</button>`
-        : `<button class="btn btn-sm btn-outline-secondary" disabled title="No check stub">📄</button>`;
+      const attachments = attachmentCount(payment.id);
+      const attachmentsButton = attachments
+        ? `<button class="btn btn-sm btn-info attachments-btn" data-id="${payment.id}" title="${attachments} attachment${attachments === 1 ? "" : "s"} - view, add or replace" aria-label="Attachments (${attachments})">${PAPERCLIP_ICON_SVG}<span class="ms-1">${attachments}</span></button>`
+        : `<button class="btn btn-sm btn-outline-primary attachments-btn" data-id="${payment.id}" title="Add attachment or edit method/reference" aria-label="Add attachment">${PLUS_ICON_SVG}</button>`;
 
-      const depositReceiptButton = paymentDepositReceipts[payment.id]
-        ? `<button class="btn btn-sm btn-info download-deposit-receipt-btn" data-id="${payment.id}" title="Download Deposit Receipt">🏦</button>`
-        : `<button class="btn btn-sm btn-outline-secondary" disabled title="No deposit receipt">🏦</button>`;
-
-      // Show recipient based on transaction type
-      const recipientDisplay =
-        payment.transaction_type === "manager_to_owner"
-          ? escapeHtml(payment.owner_name || "—")
-          : "—";
-      const documents = [
-        paymentCheckStubs[payment.id] ? "Check stub" : "",
-        paymentDepositReceipts[payment.id] ? "Deposit receipt" : "",
-      ].filter(Boolean);
+      const reference = payment.reference_number
+        ? `<div class="text-muted small">#${escapeHtml(payment.reference_number)}</div>`
+        : "";
 
       return `
         <tr>
           <td><strong>${escapeHtml(payment.invoice_number)}</strong></td>
-          <td>${escapeHtml(payment.property_address || "—")}</td>
-          <td>${escapeHtml(payment.tenant_name || "—")}</td>
+          <td>
+            <div><strong>${escapeHtml(payment.tenant_name || "—")}</strong></div>
+            <div class="text-muted small">${escapeHtml(payment.property_address || "—")}</div>
+          </td>
           <td>${escapeHtml(payment.invoice_type || "—")}</td>
           <td class="text-end">${amountDue}</td>
           <td class="text-end">${amountPaid}</td>
           <td class="text-end">${balanceCurrency}</td>
           <td>${paymentDate}</td>
-          <td>${escapeHtml(payment.payment_method || "—")}</td>
-          <td>${escapeHtml(payment.reference_number || "—")}</td>
-          <td>${recipientDisplay}</td>
-          <td>${escapeHtml(documents.join(", ") || "—")}</td>
+          <td>
+            <div>${escapeHtml(payment.payment_method || "—")}</div>
+            ${reference}
+          </td>
           <td>
             <div class="btn-group btn-group-sm" role="group">
-              ${checkStubButton}
-              ${depositReceiptButton}
+              ${attachmentsButton}
               <button class="btn btn-sm btn-danger delete-btn" data-id="${payment.id}" title="Delete Payment">🗑️</button>
             </div>
           </td>
@@ -442,19 +455,9 @@ function displayPayments() {
     })
     .join("");
 
-  // Add event listeners for download check stub buttons
-  tbody.querySelectorAll(".download-check-stub-btn").forEach((btn) => {
+  tbody.querySelectorAll(".attachments-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
-      const paymentId = parseInt(e.currentTarget.dataset.id);
-      downloadCheckStub(paymentId);
-    });
-  });
-
-  // Add event listeners for download deposit receipt buttons
-  tbody.querySelectorAll(".download-deposit-receipt-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      const paymentId = parseInt(e.currentTarget.dataset.id);
-      downloadDepositReceipt(paymentId);
+      openAddScanDialog(parseInt(e.currentTarget.dataset.id));
     });
   });
 
@@ -635,7 +638,6 @@ function exportPaymentsToCSV() {
     "Payment Date",
     "Method",
     "Reference",
-    "Recipient",
   ];
   const rows = filteredPayments.map((payment) => {
     const invoiceData = filteredPayments
@@ -652,7 +654,6 @@ function exportPaymentsToCSV() {
       payment.payment_date,
       payment.payment_method,
       payment.reference_number,
-      payment.transaction_type === "manager_to_owner" ? payment.owner_name : "",
     ];
   });
   const csv = [headers, ...rows]
@@ -695,6 +696,156 @@ async function deletePayment(paymentId) {
   }
 }
 
+function openAddScanDialog(paymentId) {
+  const dialog = document.getElementById("addScanDialog");
+  if (!dialog) return;
+  scanPaymentId = paymentId;
+  document.getElementById("addScanForm").reset();
+  const payment = payments.find((p) => p.id === paymentId);
+  const methodSelect = document.getElementById("scanMethod");
+  const method = payment?.payment_method || "";
+  // Keep legacy methods that aren't in the standard list selectable.
+  if (method && ![...methodSelect.options].some((o) => o.value === method)) {
+    methodSelect.add(new Option(method, method));
+  }
+  methodSelect.value = method;
+  document.getElementById("scanReference").value =
+    payment?.reference_number || "";
+  renderScanAttachmentList();
+  dialog.showModal();
+}
+
+function renderScanAttachmentList() {
+  const list = document.getElementById("scanAttachmentList");
+  if (!list) return;
+
+  const attached = ATTACHMENT_TYPES.filter((type) =>
+    hasAttachment(scanPaymentId, type.slug),
+  );
+
+  if (attached.length === 0) {
+    list.innerHTML =
+      '<li class="text-muted small">No documents attached yet.</li>';
+    return;
+  }
+
+  list.innerHTML = attached
+    .map(
+      (type) => `
+        <li class="d-flex align-items-center justify-content-between mb-1">
+          <span>${escapeHtml(type.label)}</span>
+          <span class="btn-group btn-group-sm">
+            <button type="button" class="btn btn-outline-secondary download-attachment-btn" data-slug="${type.slug}">Download</button>
+            <button type="button" class="btn btn-outline-danger delete-attachment-btn" data-slug="${type.slug}">Remove</button>
+          </span>
+        </li>
+      `,
+    )
+    .join("");
+
+  list.querySelectorAll(".download-attachment-btn").forEach((btn) => {
+    btn.addEventListener("click", () =>
+      downloadAttachmentType(scanPaymentId, btn.dataset.slug),
+    );
+  });
+  list.querySelectorAll(".delete-attachment-btn").forEach((btn) => {
+    btn.addEventListener("click", () => deleteAttachmentType(btn.dataset.slug));
+  });
+}
+
+async function deleteAttachmentType(slug) {
+  const type = ATTACHMENT_TYPES.find((t) => t.slug === slug);
+  if (!confirm(`Remove the ${type?.label || slug}?`)) return;
+
+  try {
+    const response = await fetch(`${paymentsUrl}/${scanPaymentId}/${slug}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to remove ${type?.label || slug}`);
+    }
+    setAttachment(scanPaymentId, slug, false);
+    renderScanAttachmentList();
+    displayPayments();
+  } catch (error) {
+    console.error("Error removing attachment:", error);
+    alert(`Error: ${error.message}`);
+  }
+}
+
+async function saveScan(event) {
+  event.preventDefault();
+  const scanType = document.getElementById("scanType").value;
+  const file = document.getElementById("scanFile").files[0];
+
+  try {
+    if (file) {
+      const fieldName = scanType.replace("-", "_");
+      const body = new FormData();
+      body.append(fieldName, file);
+
+      const response = await fetch(
+        `${paymentsUrl}/${scanPaymentId}/${scanType}`,
+        {
+          method: "PUT",
+          body,
+          credentials: "include",
+        },
+      );
+      if (response.status === 401) {
+        alert("Your session has expired. Please log in again.");
+        window.location.href = `/login.html?next=${encodeURIComponent(window.location.pathname)}`;
+        return;
+      }
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || "Failed to upload document");
+      }
+
+      // Reflect the new document on the row immediately rather than waiting
+      // on a full reload.
+      setAttachment(scanPaymentId, scanType, true);
+    }
+
+    const payment = payments.find((p) => p.id === scanPaymentId);
+    const method = document.getElementById("scanMethod").value;
+    const reference = document.getElementById("scanReference").value.trim();
+    if (
+      payment &&
+      (method !== (payment.payment_method || "") ||
+        reference !== (payment.reference_number || ""))
+    ) {
+      const detailsResponse = await fetch(
+        `${paymentsUrl}/${scanPaymentId}/details`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            payment_method: method,
+            reference_number: reference,
+          }),
+          credentials: "include",
+        },
+      );
+      if (!detailsResponse.ok) {
+        displayPayments();
+        throw new Error(
+          "Document saved, but the method/reference could not be saved",
+        );
+      }
+      payment.payment_method = method || null;
+      payment.reference_number = reference || null;
+    }
+    displayPayments();
+
+    document.getElementById("addScanDialog").close();
+  } catch (error) {
+    console.error("Error saving attachment/details:", error);
+    alert(`Error: ${error.message}`);
+  }
+}
+
 async function downloadAttachment(url, defaultFilename) {
   const response = await fetch(url, { credentials: "include" });
   if (!response.ok) {
@@ -717,26 +868,12 @@ async function downloadAttachment(url, defaultFilename) {
   document.body.removeChild(a);
 }
 
-async function downloadCheckStub(paymentId) {
+async function downloadAttachmentType(paymentId, slug) {
   try {
-    await downloadAttachment(
-      `${paymentsUrl}/${paymentId}/check-stub`,
-      "check-stub",
-    );
+    await downloadAttachment(`${paymentsUrl}/${paymentId}/${slug}`, slug);
   } catch (error) {
-    console.error("Error downloading check stub:", error);
+    console.error(`Error downloading ${slug}:`, error);
     alert(`Error: ${error.message}`);
   }
 }
 
-async function downloadDepositReceipt(paymentId) {
-  try {
-    await downloadAttachment(
-      `${paymentsUrl}/${paymentId}/deposit-receipt`,
-      "deposit-receipt",
-    );
-  } catch (error) {
-    console.error("Error downloading deposit receipt:", error);
-    alert(`Error: ${error.message}`);
-  }
-}

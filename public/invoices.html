@@ -206,6 +206,19 @@
             </div>
 
             <div class="col-md-6">
+              <label for="invoiceType" class="form-label">Type</label>
+              <select id="invoiceType" name="invoice_type" class="form-control">
+                <option value="Rent">Rent</option>
+                <option value="Deposit">Deposit</option>
+                <option value="Expense">Expense</option>
+                <option value="Adjustment">Adjustment</option>
+                <option value="Credit">Credit</option>
+                <option value="Owner Transfer">Owner Transfer</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
               <label for="invoiceStatus" class="form-label">Status</label>
               <select id="invoiceStatus" name="status" class="form-control">
                 <option value="pending">Pending</option>
@@ -335,6 +348,7 @@
               <th>Amount</th>
               <th>Invoice Date</th>
               <th>Reporting Week</th>
+              <th>Rent Period</th>
               <th>Due Date</th>
               <th>Status</th>
               <th>Actions</th>
@@ -342,14 +356,14 @@
           </thead>
           <tbody id="invoicesTableBody">
             <tr>
-              <td colspan="10" class="text-center text-muted py-4">
+              <td colspan="11" class="text-center text-muted py-4">
                 Loading invoices...
               </td>
             </tr>
           </tbody>
           <tfoot>
             <tr>
-              <th colspan="10">
+              <th colspan="11">
                 <div class="d-flex flex-wrap justify-content-between gap-2">
                   <span id="invoiceSummaryCount">0 invoices</span>
                   <span>Total: <strong id="invoiceSummaryTotal">$0.00</strong></span>

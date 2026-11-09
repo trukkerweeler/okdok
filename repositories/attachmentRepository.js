@@ -147,6 +147,28 @@ const attachmentRepository = {
   },
 
   /**
+   * Get screenshot for a payment
+   */
+  getScreenshotByPaymentId: async (payment_id) => {
+    const sql = `
+      SELECT 
+        id,
+        payment_id,
+        file_blob,
+        filename,
+        mime_type,
+        file_size,
+        created_at
+      FROM payment_attachments
+      WHERE payment_id = ? AND attachment_type = 'screenshot'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    const results = await db.query(sql, [payment_id]);
+    return results[0] || null;
+  },
+
+  /**
    * Delete attachments for a payment filtered by type
    */
   deleteByPaymentIdAndType: async (payment_id, attachment_type) => {
