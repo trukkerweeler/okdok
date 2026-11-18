@@ -588,8 +588,19 @@ function updateDistributionPreview() {
   const selectedFeeCheckboxes = document.querySelectorAll(
     "#feesList .fee-checkbox:checked",
   );
+
   const selectedExpenseTotal = Array.from(selectedExpenseCheckboxes).reduce(
-    (sum, cb) => sum + (parseFloat(cb.dataset.amount) || 0),
+    (sum, cb) => {
+      const expenseRow = cb.closest(".expense-row");
+      const amountInput = expenseRow?.querySelector(".expense-amount-input");
+      const maxAmount = parseFloat(cb.dataset.amount) || 0;
+      const rawValue = parseFloat(amountInput?.value ?? cb.dataset.amount ?? "0");
+      const clampedValue = Number.isFinite(rawValue)
+        ? Math.min(Math.max(rawValue, 0), maxAmount)
+        : 0;
+
+      return sum + clampedValue;
+    },
     0,
   );
   const selectedFeeTotal = Array.from(selectedFeeCheckboxes).reduce(
@@ -674,10 +685,13 @@ async function showDistributionExpenseDialog(owner_id) {
       expensesList.innerHTML = expenses
         .map(
           (exp) => `
-        <div style="padding: 12px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 10px;">
-          <input 
-            type="checkbox" 
-            class="expense-checkbox" 
+        <div
+          class="expense-row"
+          style="padding: 12px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 10px;"
+        >
+          <input
+            type="checkbox"
+            class="expense-checkbox"
             value="${exp.id}"
             data-amount="${exp.amount}"
           />
@@ -686,6 +700,19 @@ async function showDistributionExpenseDialog(owner_id) {
             <div style="font-size: 12px; color: #666;">
               ${formatDateShort(exp.date)} • Vendor ID: ${exp.vendor_id || "—"}
             </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; margin-left: auto;">
+            <label style="font-size: 11px; color: #666; margin: 0;">$</label>
+            <input
+              type="number"
+              min="0.01"
+              max="${parseFloat(exp.amount).toFixed(2)}"
+              step="0.01"
+              class="expense-amount-input form-control"
+              value="${parseFloat(exp.amount).toFixed(2)}"
+              data-expense-id="${exp.id}"
+              style="width: 90px; height: 32px; font-size: 12px; padding: 4px 6px;"
+            />
           </div>
           <div style="font-weight: 600; min-width: 80px; text-align: right;">
             $${parseFloat(exp.amount).toFixed(2)}
@@ -696,7 +723,26 @@ async function showDistributionExpenseDialog(owner_id) {
         .join("");
 
       document.querySelectorAll(".expense-checkbox").forEach((checkbox) => {
-        checkbox.addEventListener("change", updateDistributionPreview);
+        checkbox.addEventListener("change", (event) => {
+          const row = event.target.closest(".expense-row");
+          const amountInput = row?.querySelector(".expense-amount-input");
+          if (event.target.checked && amountInput) {
+            amountInput.value = amountInput.value || parseFloat(event.target.dataset.amount || 0).toFixed(2);
+          }
+          updateDistributionPreview();
+        });
+      });
+
+      document.querySelectorAll(".expense-amount-input").forEach((input) => {
+        input.addEventListener("input", updateDistributionPreview);
+        input.addEventListener("change", () => {
+          const rawAmount = parseFloat(input.value);
+          const maxAmount = parseFloat(input.max) || 0;
+          if (Number.isFinite(rawAmount)) {
+            input.value = Math.min(Math.max(rawAmount, 0), maxAmount).toFixed(2);
+          }
+          updateDistributionPreview();
+        });
       });
     }
 
@@ -722,31 +768,49 @@ async function submitDistributionWithExpenses(e) {
     return;
   }
 
-  // Get selected expense IDs
-  const selectedExpenseCheckboxes = document.querySelectorAll(
-    "#expensesList .expense-checkbox:checked",
-  );
-  const expense_ids = Array.from(selectedExpenseCheckboxes).map((cb) =>
-    parseInt(cb.value),
-  );
-
-  // Get selected fee IDs
-  const selectedFeeCheckboxes = document.querySelectorAll(
-    "#feesList .fee-checkbox:checked",
-  );
-  const fee_ids = Array.from(selectedFeeCheckboxes).map((cb) =>
-    parseInt(cb.value),
-  );
-
-  // Close dialog
-  document.getElementById("distributionExpenseDialog").close();
-
-  isSubmitting = true;
-
   try {
+    const selectedExpenseRows = Array.from(
+      document.querySelectorAll("#expensesList .expense-row"),
+    ).filter((row) => row.querySelector(".expense-checkbox")?.checked);
+
+    const expense_reimbursements = selectedExpenseRows.map((row) => {
+      const checkbox = row.querySelector(".expense-checkbox");
+      const amountInput = row.querySelector(".expense-amount-input");
+      const expenseId = parseInt(checkbox.value);
+      const maxAmount = parseFloat(checkbox.dataset.amount) || 0;
+      const reimbursementAmount = parseFloat(amountInput?.value ?? "0");
+      const clampedAmount = Number.isFinite(reimbursementAmount)
+        ? Math.min(Math.max(reimbursementAmount, 0), maxAmount)
+        : 0;
+
+      if (!(clampedAmount > 0)) {
+        throw new Error(
+          "Each selected expense must have a reimbursement amount greater than $0.00.",
+        );
+      }
+
+      return {
+        expense_id: expenseId,
+        amount: Number(clampedAmount.toFixed(2)),
+      };
+    });
+
+    const expense_ids = expense_reimbursements.map((item) => item.expense_id);
+
+    const selectedFeeCheckboxes = document.querySelectorAll(
+      "#feesList .fee-checkbox:checked",
+    );
+    const fee_ids = Array.from(selectedFeeCheckboxes).map((cb) =>
+      parseInt(cb.value),
+    );
+
+    document.getElementById("distributionExpenseDialog").close();
+    isSubmitting = true;
+
     const payload = {
       ...pendingDistribution,
       expense_ids,
+      expense_reimbursements,
       fee_ids,
     };
 

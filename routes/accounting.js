@@ -1080,6 +1080,7 @@ router.post("/distributions/owner", async (req, res) => {
       date,
       expense_ids,
       fee_ids,
+      expense_reimbursements,
       management_fee,
       management_fee_memo,
     } = req.body;
@@ -1111,24 +1112,29 @@ router.post("/distributions/owner", async (req, res) => {
       }
     }
 
+    const normalizedExpenseReimbursements = Array.isArray(expense_reimbursements)
+      ? expense_reimbursements
+      : Array.isArray(expense_ids)
+        ? expense_ids.map((expense_id) => ({ expense_id, amount: null }))
+        : [];
+
     // Wrap entire distribution operation in transaction
     const entry = await db.transaction(async (connection) => {
-      // Fetch unreimbursed expenses for this owner within transaction
       const unreimbursedExpenses = await db.queryInTransaction(
         connection,
         `
-        SELECT le.* 
+        SELECT le.*
         FROM ledger_entries le
         JOIN accounts debit_acc ON le.debit_account_id = debit_acc.id
         WHERE le.owner_id = ?
           AND debit_acc.name = 'Owner Expense'
-          AND (le.reimbursement_status = 'unreimbursed' OR le.reimbursement_status IS NULL)
+          AND COALESCE(le.reimbursed_amount, 0) < le.amount
+          AND le.reimbursement_status IN ('unreimbursed', 'partially_reimbursed')
         ORDER BY le.date ASC
       `,
         [owner_id],
       );
 
-      // Fetch unreimbursed fees for this owner within transaction
       const unreimbursedFees = await db.queryInTransaction(
         connection,
         `
@@ -1144,8 +1150,8 @@ router.post("/distributions/owner", async (req, res) => {
       );
 
       let distributionAmount = parseFloat(amount);
+      let selectedExpenseReimbursements = [];
 
-      // Deduct inline management fee if provided directly on the distribution
       if (management_fee && parseFloat(management_fee) > 0) {
         const feeCents = Math.round(parseFloat(management_fee) * 100);
         const distCents = Math.round(distributionAmount * 100);
@@ -1157,31 +1163,57 @@ router.post("/distributions/owner", async (req, res) => {
         }
       }
 
-      // Validate and deduct selected expenses
-      if (expense_ids && expense_ids.length > 0) {
-        const selectedExpenseIds = expense_ids.map((id) => parseInt(id));
+      if (normalizedExpenseReimbursements.length > 0) {
         const selectedExpenseMap = new Map(
-          unreimbursedExpenses.map((expense) => [
-            parseInt(expense.id),
-            expense,
-          ]),
+          unreimbursedExpenses.map((expense) => [parseInt(expense.id), expense]),
         );
 
-        const invalidExpenseIds = selectedExpenseIds.filter(
-          (id) => !selectedExpenseMap.has(id),
+        selectedExpenseReimbursements = normalizedExpenseReimbursements.map(
+          (reimbursement) => {
+            const expense_id = parseInt(
+              reimbursement.expense_id ?? reimbursement.id ?? reimbursement,
+            );
+            const expense = selectedExpenseMap.get(expense_id);
+            if (!expense) {
+              throw new Error(
+                "One or more selected expenses are invalid or already reimbursed.",
+              );
+            }
+
+            const outstandingBalance =
+              parseFloat(expense.amount) - parseFloat(expense.reimbursed_amount || 0);
+            const reimbursementAmount = parseFloat(
+              reimbursement.amount ??
+                reimbursement.reimbursement_amount ??
+                reimbursement.value ??
+                expense.amount,
+            );
+
+            if (!Number.isFinite(reimbursementAmount) || reimbursementAmount <= 0) {
+              throw new Error(
+                "Each reimbursed expense must have a positive amount.",
+              );
+            }
+
+            if (reimbursementAmount > outstandingBalance + 0.000001) {
+              throw new Error(
+                "A reimbursement amount cannot exceed the remaining outstanding balance for an expense.",
+              );
+            }
+
+            return {
+              expense_id,
+              expense,
+              amount: reimbursementAmount,
+            };
+          },
         );
-        if (invalidExpenseIds.length > 0) {
-          throw new Error(
-            "One or more selected expenses are invalid or already reimbursed.",
-          );
-        }
 
-        const reimbursedTotalCents = selectedExpenseIds.reduce((sum, id) => {
-          const exp = selectedExpenseMap.get(id);
-          return sum + Math.round(parseFloat(exp.amount) * 100);
-        }, 0);
+        const reimbursedTotalCents = selectedExpenseReimbursements.reduce(
+          (sum, item) => sum + Math.round(item.amount * 100),
+          0,
+        );
 
-        // Do math in cents to avoid floating point errors
         const distributionCents = Math.round(distributionAmount * 100);
         distributionAmount = (distributionCents - reimbursedTotalCents) / 100;
 
@@ -1251,26 +1283,26 @@ router.post("/distributions/owner", async (req, res) => {
         distributionId,
       ]);
 
-      // Link selected expenses and mark as reimbursed within same transaction
-      if (expense_ids && expense_ids.length > 0) {
-        for (const expense_id of expense_ids) {
-          // Insert into distribution_expenses junction
-          const linkSql = `
-            INSERT INTO distribution_expenses (distribution_id, expense_id, amount)
-            SELECT ?, ?, le.amount
-            FROM ledger_entries le
-            WHERE le.id = ?
-          `;
-          await db.queryInTransaction(connection, linkSql, [
-            distributionId,
-            expense_id,
-            expense_id,
-          ]);
+      if (selectedExpenseReimbursements.length > 0) {
+        for (const item of selectedExpenseReimbursements) {
+          await db.queryInTransaction(
+            connection,
+            `INSERT INTO distribution_expenses (distribution_id, expense_id, amount)
+             VALUES (?, ?, ?)`,
+            [distributionId, item.expense_id, item.amount],
+          );
 
-          // Mark expense as reimbursed
-          const updateSql =
-            "UPDATE ledger_entries SET reimbursement_status = 'reimbursed' WHERE id = ?";
-          await db.queryInTransaction(connection, updateSql, [expense_id]);
+          await db.queryInTransaction(
+            connection,
+            `UPDATE ledger_entries
+             SET reimbursed_amount = COALESCE(reimbursed_amount, 0) + ?,
+                 reimbursement_status = CASE
+                   WHEN COALESCE(reimbursed_amount, 0) + ? >= amount THEN 'reimbursed'
+                   ELSE 'partially_reimbursed'
+                 END
+             WHERE id = ?`,
+            [item.amount, item.amount, item.expense_id],
+          );
         }
       }
 

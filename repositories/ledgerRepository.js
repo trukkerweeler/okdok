@@ -194,7 +194,12 @@ const ledgerRepository = {
         connection,
         `UPDATE ledger_entries le
          JOIN distribution_expenses de ON de.expense_id = le.id
-         SET le.reimbursement_status = 'unreimbursed'
+         SET le.reimbursed_amount = GREATEST(COALESCE(le.reimbursed_amount, 0) - de.amount, 0),
+             le.reimbursement_status = CASE
+               WHEN GREATEST(COALESCE(le.reimbursed_amount, 0) - de.amount, 0) <= 0 THEN 'unreimbursed'
+               WHEN GREATEST(COALESCE(le.reimbursed_amount, 0) - de.amount, 0) < le.amount THEN 'partially_reimbursed'
+               ELSE 'reimbursed'
+             END
          WHERE de.distribution_id = ?`,
         [id],
       );
@@ -238,7 +243,8 @@ const ledgerRepository = {
       JOIN accounts debit_acc ON le.debit_account_id = debit_acc.id
       WHERE le.owner_id = ?
         AND debit_acc.name = 'Owner Expense'
-        AND (le.reimbursement_status = 'unreimbursed' OR le.reimbursement_status IS NULL)
+        AND COALESCE(le.reimbursed_amount, 0) < le.amount
+        AND le.reimbursement_status IN ('unreimbursed', 'partially_reimbursed')
       ORDER BY le.date ASC
     `;
     return db.query(sql, [owner_id]);
@@ -247,30 +253,35 @@ const ledgerRepository = {
   /**
    * Link a distribution to specific expenses (mark them as reimbursed)
    * @param {number} distribution_id - Distribution ledger entry ID
-   * @param {array} expense_ids - Array of expense ledger entry IDs to reimburse
+   * @param {array} reimbursement_entries - Array of expense entries with optional amount values
    * @returns {Promise<void>}
    */
-  linkDistributionToExpenses: async (distribution_id, expense_ids) => {
-    if (!expense_ids || expense_ids.length === 0) {
+  linkDistributionToExpenses: async (distribution_id, reimbursement_entries) => {
+    if (!reimbursement_entries || reimbursement_entries.length === 0) {
       return;
     }
 
-    // Insert records into distribution_expenses
-    const values = expense_ids.map((id) => [distribution_id, id, 0]); // amount will be filled from expense
+    for (const entry of reimbursement_entries) {
+      const expense_id = parseInt(entry.expense_id ?? entry.id ?? entry);
+      const amount = parseFloat(entry.amount ?? entry.reimbursement_amount ?? entry.value ?? null);
+      const reimbursementAmount = Number.isFinite(amount) && amount > 0 ? amount : null;
 
-    for (const expense_id of expense_ids) {
       const sql = `
         INSERT INTO distribution_expenses (distribution_id, expense_id, amount)
-        SELECT ?, ?, le.amount
-        FROM ledger_entries le
-        WHERE le.id = ?
+        VALUES (?, ?, ?)
       `;
-      await db.query(sql, [distribution_id, expense_id, expense_id]);
+      await db.query(sql, [distribution_id, expense_id, reimbursementAmount ?? 0]);
 
-      // Mark expense as reimbursed
-      const updateSql =
-        "UPDATE ledger_entries SET reimbursement_status = 'reimbursed' WHERE id = ?";
-      await db.query(updateSql, [expense_id]);
+      const updateSql = `
+        UPDATE ledger_entries
+        SET reimbursed_amount = COALESCE(reimbursed_amount, 0) + ?,
+            reimbursement_status = CASE
+              WHEN COALESCE(reimbursed_amount, 0) + ? >= amount THEN 'reimbursed'
+              ELSE 'partially_reimbursed'
+            END
+        WHERE id = ?
+      `;
+      await db.query(updateSql, [reimbursementAmount ?? 0, reimbursementAmount ?? 0, expense_id]);
     }
   },
 
